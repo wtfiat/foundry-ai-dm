@@ -9,17 +9,10 @@ import { findFoundryHost, findManifestJSON } from "./utils.ts";
 
 export type PackageType = "module" | "system" | "world";
 
-const packageType: PackageType = "REPLACE ME";
+const packageType: PackageType = "module";
 
 // The package name should be the same as the name in the `module.json`/`system.json` file.
-const packageID: string = "REPLACE ME";
-
-// @ts-expect-error the types are set to invalid values to ensure the user sets them.
-if (packageType == "REPLACE ME" || packageID == "REPLACE ME") {
-  throw new Error(
-    `Must set the "packageType" and the "packageID" variables in vite.config.ts`,
-  );
-}
+const packageID: string = "foundry-ai-dm";
 
 const manifestJSONPath = await findManifestJSON(packageType);
 

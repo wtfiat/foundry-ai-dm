@@ -1,5 +1,5 @@
 {
-  "name": "fvtt-starter-project",
+  "name": "foundry-ai-dm",
   "type": "module",
   "packageManager": "yarn@4.6.0",
   "scripts": {
@@ -41,5 +41,6 @@
     "vite-plugin-checker": "^0.8.0",
     "vite-plugin-static-copy": "^2.2.0",
     "vite-tsconfig-paths": "^5.1.4"
-  }
+  },
+  "description": "GM-only, self-hosted AI co-DM module for FoundryVTT powered by local Ollama models."
 }

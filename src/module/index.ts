@@ -1,23 +1,44 @@
-// While many common classes are in the global scope such as `Actor` or `Item`, it seems Foundry has begun moving away from this.
-// Notably the `DataModel`, `DataField`, `ApplicationV2`, and other similar class is only accessible through some path.
-//
-// `import =` is an obscure syntax from the CommonJS era.
-// The pivotal part about it here is that it's effectively equivalent to:
-// `var DataModel = foundry.abstract.DataModel`.
-// But it also lets you write things like `DataModel.Any` that refers to the `DataModel` namespace.
-import DataModel = foundry.abstract.DataModel;
+import { MODULE_ID, MODULE_TITLE } from "./constants.ts";
+import { logger } from "./logger.ts";
+import { OllamaClient } from "./ollama/client.ts";
+import { runOllamaDiagnostics } from "./ollama/diagnostics.ts";
+import { registerSettings, AIDMSettings } from "./settings.ts";
 
-Hooks.on("ready", () => {
-  // This is an example of why using the `import =` syntax is helpful.
-  // Try changing the `import` above to `const` and see what happens.
-  const exampleActor: DataModel.Any = new Actor({
-    type: "base",
-    name: "Example Actor",
-  });
+Hooks.once("init", () => {
+  logger.info(`Initializing ${MODULE_TITLE}.`);
+  registerSettings();
 
-  if (!(exampleActor instanceof DataModel)) {
-    throw new Error("Actor must be an instance of DataModel!");
+  const moduleData = game.modules.get(MODULE_ID);
+  if (moduleData != null) {
+    Object.assign(moduleData, {
+      api: {
+        createOllamaClient: () =>
+          new OllamaClient({
+            baseUrl: AIDMSettings.getClientSettings().ollamaBaseUrl,
+            timeoutMs: AIDMSettings.getClientSettings().requestTimeoutMs,
+          }),
+        getSettingsSnapshot: () => AIDMSettings.getAllSettings(),
+        runDiagnostics: () =>
+          runOllamaDiagnostics({
+            client: {
+              baseUrl: AIDMSettings.getClientSettings().ollamaBaseUrl,
+              timeoutMs: AIDMSettings.getClientSettings().requestTimeoutMs,
+            },
+            expectedChatModel: AIDMSettings.getClientSettings().chatModel,
+            expectedEmbeddingModel: AIDMSettings.getClientSettings().embeddingModel,
+          }),
+      },
+    });
+  }
+});
+
+Hooks.once("ready", () => {
+  logger.info(`${MODULE_TITLE} is ready.`);
+
+  if (!game.user?.isGM) {
+    logger.debug("Skipping GM-only runtime initialization for non-GM user.");
+    return;
   }
 
-  console.log(exampleActor);
+  logger.debug("Current AI DM settings snapshot.", AIDMSettings.getAllSettings());
 });

@@ -1,0 +1,188 @@
+<form class="aidm-settings" autocomplete="off">
+  <section class="aidm-settings__section">
+    <h2>Ollama connection</h2>
+    <div class="aidm-settings__field-grid">
+      <div class="aidm-settings__field">
+        <label for="aidm-ollama-base-url">Base URL</label>
+        <input id="aidm-ollama-base-url" type="text" name="ollamaBaseUrl" value="{{ollamaBaseUrl}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-chat-model">Chat model</label>
+        <input id="aidm-chat-model" type="text" name="chatModel" value="{{chatModel}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-embedding-model">Embedding model</label>
+        <input id="aidm-embedding-model" type="text" name="embeddingModel" value="{{embeddingModel}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-request-timeout">Request timeout (ms)</label>
+        <input id="aidm-request-timeout" type="number" min="1000" step="1000" name="requestTimeoutMs" value="{{requestTimeoutMs}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-keep-alive">Keep alive</label>
+        <input id="aidm-keep-alive" type="text" name="keepAlive" value="{{keepAlive}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-chat-temperature">Temperature</label>
+        <input id="aidm-chat-temperature" type="number" min="0" max="2" step="0.1" name="chatTemperature" value="{{chatTemperature}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-chat-num-ctx">Context window</label>
+        <input id="aidm-chat-num-ctx" type="number" min="1024" step="512" name="chatNumCtx" value="{{chatNumCtx}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-debug-logging">Enable debug logging</label>
+        <input id="aidm-debug-logging" type="checkbox" name="debugLogging" {{checked debugLogging}}>
+      </div>
+    </div>
+  </section>
+
+  <section class="aidm-settings__section">
+    <h2>World defaults</h2>
+    <div class="aidm-settings__field-grid">
+      <div class="aidm-settings__field">
+        <label for="aidm-tone-preset">DM tone preset</label>
+        <input id="aidm-tone-preset" type="text" name="tonePreset" value="{{tonePreset}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-retrieval-top-k">Retrieval top-K</label>
+        <input id="aidm-retrieval-top-k" type="number" min="1" max="30" step="1" name="retrievalTopK" value="{{retrievalTopK}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-chunk-size">Chunk size</label>
+        <input id="aidm-chunk-size" type="number" min="200" step="50" name="chunkSize" value="{{chunkSize}}">
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-confirm-writes">Require confirmation before writes</label>
+        <input id="aidm-confirm-writes" type="checkbox" name="confirmWrites" {{checked confirmWrites}}>
+      </div>
+    </div>
+  </section>
+
+  <section class="aidm-settings__section">
+    <h2>Indexed document types</h2>
+    <div class="aidm-settings__field-grid">
+      <div class="aidm-settings__field">
+        <label for="aidm-index-journals">Journal entries</label>
+        <input id="aidm-index-journals" type="checkbox" name="indexJournalEntries" {{checked indexJournalEntries}}>
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-index-scenes">Scenes</label>
+        <input id="aidm-index-scenes" type="checkbox" name="indexScenes" {{checked indexScenes}}>
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-index-actors">Actors</label>
+        <input id="aidm-index-actors" type="checkbox" name="indexActors" {{checked indexActors}}>
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-index-items">Items</label>
+        <input id="aidm-index-items" type="checkbox" name="indexItems" {{checked indexItems}}>
+      </div>
+
+      <div class="aidm-settings__field">
+        <label for="aidm-index-rolltables">Roll tables</label>
+        <input id="aidm-index-rolltables" type="checkbox" name="indexRollTables" {{checked indexRollTables}}>
+      </div>
+    </div>
+  </section>
+
+  {{#if diagnostics}}
+    <section class="aidm-settings__section aidm-settings__diagnostics aidm-settings__diagnostics--{{diagnostics.status}}">
+      <h2>Connection diagnostics</h2>
+      <p><strong>Status:</strong> {{diagnostics.summary}}</p>
+      <p><strong>Browser origin:</strong> <code>{{diagnostics.browserOrigin}}</code></p>
+      <p><strong>Configured Ollama URL:</strong> <code>{{diagnostics.configuredBaseUrl}}</code></p>
+
+      {{#if diagnostics.version}}
+        <p><strong>Ollama version:</strong> <code>{{diagnostics.version}}</code></p>
+      {{/if}}
+
+      {{#if diagnostics.availableModels.length}}
+        <div>
+          <strong>Installed models</strong>
+          <ul class="aidm-settings__list">
+            {{#each diagnostics.availableModels as |modelName|}}
+              <li><code>{{modelName}}</code></li>
+            {{/each}}
+          </ul>
+        </div>
+      {{/if}}
+
+      {{#if diagnostics.runningModels.length}}
+        <div>
+          <strong>Running models</strong>
+          <ul class="aidm-settings__list">
+            {{#each diagnostics.runningModels as |modelName|}}
+              <li><code>{{modelName}}</code></li>
+            {{/each}}
+          </ul>
+        </div>
+      {{/if}}
+
+      {{#if diagnostics.missingModels.length}}
+        <div>
+          <strong>Missing configured models</strong>
+          <ul class="aidm-settings__list">
+            {{#each diagnostics.missingModels as |modelName|}}
+              <li><code>{{modelName}}</code></li>
+            {{/each}}
+          </ul>
+        </div>
+      {{/if}}
+
+      {{#if diagnostics.details.length}}
+        <div>
+          <strong>Details</strong>
+          <ul class="aidm-settings__list">
+            {{#each diagnostics.details as |detail|}}
+              <li>{{detail}}</li>
+            {{/each}}
+          </ul>
+        </div>
+      {{/if}}
+
+      {{#if diagnostics.troubleshooting.length}}
+        <div>
+          <strong>Troubleshooting</strong>
+          <ul class="aidm-settings__list">
+            {{#each diagnostics.troubleshooting as |step|}}
+              <li>{{step}}</li>
+            {{/each}}
+          </ul>
+        </div>
+      {{/if}}
+
+      {{#if diagnostics.suggestedEnv}}
+        <div>
+          <strong>Suggested Ollama environment</strong>
+          <pre class="aidm-settings__code">{{diagnostics.suggestedEnv}}</pre>
+        </div>
+      {{/if}}
+    </section>
+  {{/if}}
+
+  <footer class="aidm-settings__actions">
+    <button type="button" data-action="test-connection">
+      <i class="fa-solid fa-plug-circle-check"></i>
+      Test connection
+    </button>
+
+    <button type="submit">
+      <i class="fa-solid fa-floppy-disk"></i>
+      Save settings
+    </button>
+  </footer>
+</form>

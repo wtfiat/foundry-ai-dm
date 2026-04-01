@@ -1,0 +1,24 @@
+{
+  "id": "foundry-ai-dm",
+  "title": "Foundry AI DM",
+  "description": "A GM-only, self-hosted AI co-DM module for FoundryVTT powered by local Ollama models.",
+  "version": "0.1.0-alpha.1",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13.351"
+  },
+  "authors": [
+    {
+      "name": "wtfiat"
+    }
+  ],
+  "esmodules": [
+    "index.js"
+  ],
+  "styles": [
+    "styles.css"
+  ],
+  "url": "https://github.com/wtfiat/foundry-ai-dm",
+  "manifest": "https://raw.githubusercontent.com/wtfiat/foundry-ai-dm/main/module.json",
+  "license": "MIT-0"
+}
