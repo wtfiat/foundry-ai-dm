@@ -39,8 +39,12 @@ Hooks.once("init", () => {
         expectedChatModel: AIDMSettings.getClientSettings().chatModel,
         expectedEmbeddingModel: AIDMSettings.getClientSettings().embeddingModel,
       }),
-    openPanel: () => openAIDMPanel(),
-    togglePanel: () => toggleAIDMPanel(),
+    openPanel: () => {
+      openAIDMPanel();
+    },
+    togglePanel: () => {
+      toggleAIDMPanel();
+    },
   };
 });
 
@@ -55,7 +59,12 @@ Hooks.once("ready", () => {
   logger.debug("Current AI DM settings snapshot.", AIDMSettings.getAllSettings());
 });
 
-Hooks.on("getSceneControlButtons", (controls: SceneControlsRecord) => {
+const registerSceneControlButtonsHook = Hooks.on as unknown as (
+  hook: string,
+  fn: (controls: SceneControlsRecord) => void,
+) => number;
+
+registerSceneControlButtonsHook("getSceneControlButtons", (controls: SceneControlsRecord) => {
   if (!game.user?.isGM) {
     return;
   }

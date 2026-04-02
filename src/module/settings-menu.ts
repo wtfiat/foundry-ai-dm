@@ -28,6 +28,7 @@ interface SettingsMenuFormData {
   indexRollTables: boolean;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-deprecated
 export class AIDMSettingsMenu extends foundry.appv1.api.FormApplication {
   #diagnostics?: OllamaDiagnosticsResult;
 
