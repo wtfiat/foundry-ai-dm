@@ -1,0 +1,139 @@
+<form class="aidm-panel-shell" autocomplete="off">
+  <section class="aidm-panel-status aidm-panel-status-{{connectionState}}">
+    <div>
+      <p class="aidm-panel-eyebrow">Connection</p>
+      <h2>{{connectionLabel}}</h2>
+      <p>{{connectionSummary}}</p>
+    </div>
+
+    <div class="aidm-panel-status-actions">
+      <div class="aidm-panel-status-models">
+        <span><strong>Chat:</strong> <code>{{configuredChatModel}}</code></span>
+        <span><strong>Embed:</strong> <code>{{configuredEmbeddingModel}}</code></span>
+      </div>
+
+      <button type="button" class="aidm-button aidm-button-secondary" data-action="refresh-status" {{#if isBusy}}disabled{{/if}}>
+        <i class="fa-solid fa-rotate"></i>
+        Refresh status
+      </button>
+    </div>
+  </section>
+
+  <section class="aidm-panel-context">
+    <div>
+      <p class="aidm-panel-eyebrow">Runtime context</p>
+      <div class="aidm-panel-chip-row">
+        {{#if activeSceneName}}
+          <span class="aidm-chip">Scene: {{activeSceneName}}</span>
+        {{else}}
+          <span class="aidm-chip aidm-chip-muted">No active scene</span>
+        {{/if}}
+
+        {{#if selectedActorName}}
+          <span class="aidm-chip">Selected actor: {{selectedActorName}}</span>
+        {{else}}
+          <span class="aidm-chip aidm-chip-muted">No selected actor</span>
+        {{/if}}
+
+        {{#unless retrievalReady}}
+          <span class="aidm-chip aidm-chip-warning">World retrieval not wired yet</span>
+        {{/unless}}
+      </div>
+    </div>
+
+    {{#if sceneSummary.length}}
+      <ul class="aidm-panel-context-list">
+        {{#each sceneSummary as |summary|}}
+          <li>{{summary}}</li>
+        {{/each}}
+      </ul>
+    {{/if}}
+  </section>
+
+  <section class="aidm-panel-transcript-wrap">
+    <div class="aidm-panel-transcript-header">
+      <div>
+        <p class="aidm-panel-eyebrow">Transcript</p>
+        <h2>Current panel conversation</h2>
+      </div>
+
+      <button type="button" class="aidm-button aidm-button-secondary" data-action="clear-transcript" {{#if isBusy}}disabled{{/if}}>
+        <i class="fa-solid fa-trash"></i>
+        Clear
+      </button>
+    </div>
+
+    <div class="aidm-panel-transcript">
+      {{#if transcript.length}}
+        {{#each transcript as |entry|}}
+          <article class="aidm-panel-transcript-entry aidm-panel-transcript-entry-{{entry.role}} {{#if entry.error}}aidm-panel-transcript-entry-error{{/if}}" data-entry-id="{{entry.id}}">
+            <header class="aidm-panel-transcript-entry-header">
+              <div>
+                <strong>{{entry.roleLabel}}</strong>
+                <span>{{entry.modeLabel}}</span>
+              </div>
+              {{#if entry.pending}}
+                <span class="aidm-panel-pending">Streaming…</span>
+              {{/if}}
+            </header>
+
+            <div class="aidm-panel-transcript-content">{{entry.content}}</div>
+
+            {{#if entry.meta}}
+              <footer class="aidm-panel-transcript-meta">{{entry.meta}}</footer>
+            {{/if}}
+          </article>
+        {{/each}}
+      {{else}}
+        <div class="aidm-panel-empty-state">
+          <p>No transcript yet.</p>
+          <p>Use this first slice to validate Ollama, exercise the four GM modes, and prove the local streaming path before we wire full world retrieval.</p>
+        </div>
+      {{/if}}
+    </div>
+  </section>
+
+  <section class="aidm-panel-composer">
+    <div class="aidm-panel-composer-header">
+      <div>
+        <p class="aidm-panel-eyebrow">Prompt</p>
+        <h2>Send the next instruction</h2>
+      </div>
+      <span class="aidm-panel-tone">Tone preset: <code>{{tonePreset}}</code></span>
+    </div>
+
+    <div class="aidm-panel-composer-grid">
+      <label class="aidm-panel-field">
+        <span>Mode</span>
+        <select name="mode" {{#if isBusy}}disabled{{/if}}>
+          {{#each modeOptions as |mode|}}
+            <option value="{{mode.value}}" {{#if mode.selected}}selected{{/if}}>{{mode.label}}</option>
+          {{/each}}
+        </select>
+      </label>
+
+      <label class="aidm-panel-field aidm-panel-field-textarea">
+        <span>Prompt</span>
+        <textarea name="prompt" rows="6" placeholder="Describe the next beat, ask a lore question, or request a recap." {{#if isBusy}}disabled{{/if}}>{{promptDraft}}</textarea>
+      </label>
+    </div>
+
+    <footer class="aidm-panel-composer-actions">
+      <div class="aidm-panel-composer-hint">Ctrl/Cmd + Enter sends the current prompt.</div>
+
+      <div class="aidm-panel-button-row">
+        {{#if canCancel}}
+          <button type="button" class="aidm-button aidm-button-secondary" data-action="cancel-request">
+            <i class="fa-solid fa-ban"></i>
+            Cancel
+          </button>
+        {{/if}}
+
+        <button type="submit" class="aidm-button aidm-button-primary" {{#if isBusy}}disabled{{/if}}>
+          <i class="fa-solid fa-paper-plane"></i>
+          Send to AI DM
+        </button>
+      </div>
+    </footer>
+  </section>
+</form>

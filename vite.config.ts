@@ -16,7 +16,7 @@ const packageID: string = "foundry-ai-dm";
 
 const manifestJSONPath = await findManifestJSON(packageType);
 
-const filesToCopy = ["CHANGELOG.md", "README.md", "CONTRIBUTING.md"]; // Feel free to change me.
+const filesToCopy = ["README.md"];
 
 const devServerPort = 30001;
 const scriptsEntrypoint = "./src/module/index.ts";

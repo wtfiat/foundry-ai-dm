@@ -97,7 +97,7 @@ export interface OllamaEmbedResponse {
   prompt_eval_count?: number;
 }
 
-export type OllamaErrorCode = "network" | "timeout" | "http" | "parse" | "configuration";
+export type OllamaErrorCode = "network" | "timeout" | "http" | "parse" | "configuration" | "aborted";
 
 export class OllamaRequestError extends Error {
   readonly code: OllamaErrorCode;
@@ -221,6 +221,7 @@ export class OllamaClient {
   async chatStream(
     request: OllamaChatRequest,
     handlers: {
+      signal?: AbortSignal;
       onChunk?: (chunk: OllamaChatResponse) => void;
       onComplete?: (chunk: OllamaChatResponse) => void;
     } = {},
@@ -228,6 +229,18 @@ export class OllamaClient {
     const url = new URL("/api/chat", this.#baseUrl).toString();
     const controller = new AbortController();
     let timedOut = false;
+    let externallyAborted = false;
+    const abortFromExternalSignal = (): void => {
+      externallyAborted = true;
+      controller.abort();
+    };
+
+    if (handlers.signal?.aborted === true) {
+      abortFromExternalSignal();
+    } else {
+      handlers.signal?.addEventListener("abort", abortFromExternalSignal, { once: true });
+    }
+
     const timeout = window.setTimeout(() => {
       timedOut = true;
       controller.abort();
@@ -306,9 +319,19 @@ export class OllamaClient {
       handlers.onComplete?.(lastChunk);
       return lastChunk;
     } catch (error) {
+      if (externallyAborted) {
+        throw new OllamaRequestError({
+          code: "aborted",
+          message: `Request to ${url} was cancelled.`,
+          url,
+          cause: error,
+        });
+      }
+
       throw normalizeUnknownError(error, url, timedOut);
     } finally {
       window.clearTimeout(timeout);
+      handlers.signal?.removeEventListener("abort", abortFromExternalSignal);
     }
   }
 
