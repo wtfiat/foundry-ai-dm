@@ -21,3 +21,4 @@ dist
 .typescript-build
 foundry-ai-dm-v0-build-last-mile.patch
 foundry-ai-dm-v0-panel-fixes-clean.patch
+foundry-ai-dm-v0-finalize-build.patch

@@ -208,7 +208,6 @@ function buildConversationMessages(
   ];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-deprecated
 export class AIDMPanel extends foundry.appv1.api.Application {
   #transcript: PanelTranscriptEntry[] = [];
   #selectedMode: PanelMode = "narrate";

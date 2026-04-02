@@ -16,7 +16,7 @@
     "index.js"
   ],
   "styles": [
-    "styles.css"
+    "index.css"
   ],
   "url": "https://github.com/wtfiat/foundry-ai-dm",
   "manifest": "https://raw.githubusercontent.com/wtfiat/foundry-ai-dm/main/module.json",

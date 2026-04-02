@@ -59,7 +59,8 @@ Hooks.once("ready", () => {
   logger.debug("Current AI DM settings snapshot.", AIDMSettings.getAllSettings());
 });
 
-const registerSceneControlButtonsHook = Hooks.on as unknown as (
+// eslint-disable-next-line @typescript-eslint/no-deprecated
+const registerSceneControlButtonsHook = Hooks.on.bind(Hooks) as unknown as (
   hook: string,
   fn: (controls: SceneControlsRecord) => void,
 ) => number;
