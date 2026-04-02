@@ -269,8 +269,10 @@ export class OllamaClient {
       let buffer = "";
       let lastChunk: OllamaChatResponse | undefined;
 
-      while (true) {
+      let streamDone = false;
+      while (!streamDone) {
         const { value, done } = await reader.read();
+        streamDone = done;
         buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
 
         let newlineIndex = buffer.indexOf("\n");
@@ -284,10 +286,6 @@ export class OllamaClient {
           }
 
           newlineIndex = buffer.indexOf("\n");
-        }
-
-        if (done) {
-          break;
         }
       }
 

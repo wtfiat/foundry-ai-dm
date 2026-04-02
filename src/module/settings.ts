@@ -9,6 +9,16 @@ import {
 } from "./constants.ts";
 import { AIDMSettingsMenu } from "./settings-menu.ts";
 
+export interface PanelPosition {
+  left: number | null;
+  top: number | null;
+}
+
+export interface PanelSize {
+  width: number | null;
+  height: number | null;
+}
+
 export interface AIDMClientSettings {
   ollamaBaseUrl: string;
   chatModel: string;
@@ -18,8 +28,8 @@ export interface AIDMClientSettings {
   chatTemperature: number;
   chatNumCtx: number;
   debugLogging: boolean;
-  panelPosition: Record<string, number | null>;
-  panelSize: Record<string, number | null>;
+  panelPosition: PanelPosition;
+  panelSize: PanelSize;
 }
 
 export interface AIDMWorldSettings {
@@ -34,7 +44,16 @@ export interface AIDMWorldSettings {
   indexRollTables: boolean;
 }
 
-const CLIENT_SETTING_KEYS = {
+type SettingValue = string | number | boolean | PanelPosition | PanelSize;
+
+type GameSettingsApi = {
+  registerMenu: (namespace: string, key: string, data: Record<string, unknown>) => void;
+  register: (namespace: string, key: string, data: Record<string, unknown>) => void;
+  get: (namespace: string, key: string) => unknown;
+  set: (namespace: string, key: string, value: SettingValue) => Promise<unknown>;
+};
+
+export const CLIENT_SETTING_KEYS = {
   ollamaBaseUrl: "ollamaBaseUrl",
   chatModel: "chatModel",
   embeddingModel: "embeddingModel",
@@ -47,7 +66,7 @@ const CLIENT_SETTING_KEYS = {
   panelSize: "panelSize",
 } as const;
 
-const WORLD_SETTING_KEYS = {
+export const WORLD_SETTING_KEYS = {
   tonePreset: "tonePreset",
   confirmWrites: "confirmWrites",
   retrievalTopK: "retrievalTopK",
@@ -59,21 +78,38 @@ const WORLD_SETTING_KEYS = {
   indexRollTables: "indexRollTables",
 } as const;
 
-function getSetting<T>(key: string): T {
-  return game.settings.get(MODULE_ID, key) as T;
+function getGameSettings(): GameSettingsApi {
+  if (game.settings == null) {
+    throw new Error("Foundry game settings are not available yet.");
+  }
+
+  return game.settings as unknown as GameSettingsApi;
+}
+
+function getSetting(key: string): unknown {
+  return getGameSettings().get(MODULE_ID, key);
+}
+
+async function setManySettings(values: Record<string, SettingValue>): Promise<void> {
+  const settings = getGameSettings();
+  await Promise.all(
+    Object.entries(values).map(([key, value]) => settings.set(MODULE_ID, key, value)),
+  );
 }
 
 export function registerSettings(): void {
-  game.settings.registerMenu(MODULE_ID, "configurationMenu", {
+  const settings = getGameSettings();
+
+  settings.registerMenu(MODULE_ID, "configurationMenu", {
     name: "Foundry AI DM Configuration",
     label: "Configure",
     hint: "Configure the Ollama connection, indexing defaults, and development diagnostics.",
     icon: "fa-solid fa-wand-magic-sparkles",
-    type: AIDMSettingsMenu,
+    type: AIDMSettingsMenu as unknown as { new (): object },
     restricted: true,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.ollamaBaseUrl, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.ollamaBaseUrl, {
     name: "Ollama Base URL",
     scope: "client",
     config: false,
@@ -81,7 +117,7 @@ export function registerSettings(): void {
     default: DEFAULT_OLLAMA_BASE_URL,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.chatModel, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.chatModel, {
     name: "Chat Model",
     scope: "client",
     config: false,
@@ -89,7 +125,7 @@ export function registerSettings(): void {
     default: DEFAULT_CHAT_MODEL,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.embeddingModel, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.embeddingModel, {
     name: "Embedding Model",
     scope: "client",
     config: false,
@@ -97,7 +133,7 @@ export function registerSettings(): void {
     default: DEFAULT_EMBEDDING_MODEL,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.requestTimeoutMs, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.requestTimeoutMs, {
     name: "Request Timeout (ms)",
     scope: "client",
     config: false,
@@ -105,7 +141,7 @@ export function registerSettings(): void {
     default: 120000,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.keepAlive, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.keepAlive, {
     name: "Model Keep Alive",
     scope: "client",
     config: false,
@@ -113,7 +149,7 @@ export function registerSettings(): void {
     default: DEFAULT_KEEP_ALIVE,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.chatTemperature, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.chatTemperature, {
     name: "Chat Temperature",
     scope: "client",
     config: false,
@@ -121,7 +157,7 @@ export function registerSettings(): void {
     default: DEFAULT_CHAT_TEMPERATURE,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.chatNumCtx, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.chatNumCtx, {
     name: "Chat Context Window",
     scope: "client",
     config: false,
@@ -129,7 +165,7 @@ export function registerSettings(): void {
     default: DEFAULT_CHAT_NUM_CTX,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.debugLogging, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.debugLogging, {
     name: "Debug Logging",
     scope: "client",
     config: false,
@@ -137,7 +173,7 @@ export function registerSettings(): void {
     default: true,
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.panelPosition, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.panelPosition, {
     name: "Panel Position",
     scope: "client",
     config: false,
@@ -148,7 +184,7 @@ export function registerSettings(): void {
     },
   });
 
-  game.settings.register(MODULE_ID, CLIENT_SETTING_KEYS.panelSize, {
+  settings.register(MODULE_ID, CLIENT_SETTING_KEYS.panelSize, {
     name: "Panel Size",
     scope: "client",
     config: false,
@@ -159,7 +195,7 @@ export function registerSettings(): void {
     },
   });
 
-  game.settings.register(MODULE_ID, WORLD_SETTING_KEYS.tonePreset, {
+  settings.register(MODULE_ID, WORLD_SETTING_KEYS.tonePreset, {
     name: "Tone Preset",
     scope: "world",
     config: false,
@@ -167,7 +203,7 @@ export function registerSettings(): void {
     default: "classic-fantasy-dm",
   });
 
-  game.settings.register(MODULE_ID, WORLD_SETTING_KEYS.confirmWrites, {
+  settings.register(MODULE_ID, WORLD_SETTING_KEYS.confirmWrites, {
     name: "Confirm Writes",
     scope: "world",
     config: false,
@@ -175,7 +211,7 @@ export function registerSettings(): void {
     default: true,
   });
 
-  game.settings.register(MODULE_ID, WORLD_SETTING_KEYS.retrievalTopK, {
+  settings.register(MODULE_ID, WORLD_SETTING_KEYS.retrievalTopK, {
     name: "Retrieval Top-K",
     scope: "world",
     config: false,
@@ -183,7 +219,7 @@ export function registerSettings(): void {
     default: 8,
   });
 
-  game.settings.register(MODULE_ID, WORLD_SETTING_KEYS.chunkSize, {
+  settings.register(MODULE_ID, WORLD_SETTING_KEYS.chunkSize, {
     name: "Chunk Size",
     scope: "world",
     config: false,
@@ -198,7 +234,7 @@ export function registerSettings(): void {
     [WORLD_SETTING_KEYS.indexItems, "Index World Items"],
     [WORLD_SETTING_KEYS.indexRollTables, "Index Roll Tables"],
   ] as const) {
-    game.settings.register(MODULE_ID, key, {
+    settings.register(MODULE_ID, key, {
       name,
       scope: "world",
       config: false,
@@ -208,40 +244,44 @@ export function registerSettings(): void {
   }
 }
 
-export class AIDMSettings {
-  static getClientSettings(): AIDMClientSettings {
+export const AIDMSettings = {
+  getClientSettings(): AIDMClientSettings {
     return {
-      ollamaBaseUrl: getSetting<string>(CLIENT_SETTING_KEYS.ollamaBaseUrl),
-      chatModel: getSetting<string>(CLIENT_SETTING_KEYS.chatModel),
-      embeddingModel: getSetting<string>(CLIENT_SETTING_KEYS.embeddingModel),
-      requestTimeoutMs: getSetting<number>(CLIENT_SETTING_KEYS.requestTimeoutMs),
-      keepAlive: getSetting<string>(CLIENT_SETTING_KEYS.keepAlive),
-      chatTemperature: getSetting<number>(CLIENT_SETTING_KEYS.chatTemperature),
-      chatNumCtx: getSetting<number>(CLIENT_SETTING_KEYS.chatNumCtx),
-      debugLogging: getSetting<boolean>(CLIENT_SETTING_KEYS.debugLogging),
-      panelPosition: getSetting<Record<string, number | null>>(CLIENT_SETTING_KEYS.panelPosition),
-      panelSize: getSetting<Record<string, number | null>>(CLIENT_SETTING_KEYS.panelSize),
+      ollamaBaseUrl: getSetting(CLIENT_SETTING_KEYS.ollamaBaseUrl) as string,
+      chatModel: getSetting(CLIENT_SETTING_KEYS.chatModel) as string,
+      embeddingModel: getSetting(CLIENT_SETTING_KEYS.embeddingModel) as string,
+      requestTimeoutMs: getSetting(CLIENT_SETTING_KEYS.requestTimeoutMs) as number,
+      keepAlive: getSetting(CLIENT_SETTING_KEYS.keepAlive) as string,
+      chatTemperature: getSetting(CLIENT_SETTING_KEYS.chatTemperature) as number,
+      chatNumCtx: getSetting(CLIENT_SETTING_KEYS.chatNumCtx) as number,
+      debugLogging: getSetting(CLIENT_SETTING_KEYS.debugLogging) as boolean,
+      panelPosition: getSetting(CLIENT_SETTING_KEYS.panelPosition) as PanelPosition,
+      panelSize: getSetting(CLIENT_SETTING_KEYS.panelSize) as PanelSize,
     };
-  }
+  },
 
-  static getWorldSettings(): AIDMWorldSettings {
+  getWorldSettings(): AIDMWorldSettings {
     return {
-      tonePreset: getSetting<string>(WORLD_SETTING_KEYS.tonePreset),
-      confirmWrites: getSetting<boolean>(WORLD_SETTING_KEYS.confirmWrites),
-      retrievalTopK: getSetting<number>(WORLD_SETTING_KEYS.retrievalTopK),
-      chunkSize: getSetting<number>(WORLD_SETTING_KEYS.chunkSize),
-      indexJournalEntries: getSetting<boolean>(WORLD_SETTING_KEYS.indexJournalEntries),
-      indexScenes: getSetting<boolean>(WORLD_SETTING_KEYS.indexScenes),
-      indexActors: getSetting<boolean>(WORLD_SETTING_KEYS.indexActors),
-      indexItems: getSetting<boolean>(WORLD_SETTING_KEYS.indexItems),
-      indexRollTables: getSetting<boolean>(WORLD_SETTING_KEYS.indexRollTables),
+      tonePreset: getSetting(WORLD_SETTING_KEYS.tonePreset) as string,
+      confirmWrites: getSetting(WORLD_SETTING_KEYS.confirmWrites) as boolean,
+      retrievalTopK: getSetting(WORLD_SETTING_KEYS.retrievalTopK) as number,
+      chunkSize: getSetting(WORLD_SETTING_KEYS.chunkSize) as number,
+      indexJournalEntries: getSetting(WORLD_SETTING_KEYS.indexJournalEntries) as boolean,
+      indexScenes: getSetting(WORLD_SETTING_KEYS.indexScenes) as boolean,
+      indexActors: getSetting(WORLD_SETTING_KEYS.indexActors) as boolean,
+      indexItems: getSetting(WORLD_SETTING_KEYS.indexItems) as boolean,
+      indexRollTables: getSetting(WORLD_SETTING_KEYS.indexRollTables) as boolean,
     };
-  }
+  },
 
-  static getAllSettings(): AIDMClientSettings & AIDMWorldSettings {
+  getAllSettings(): AIDMClientSettings & AIDMWorldSettings {
     return {
       ...this.getClientSettings(),
       ...this.getWorldSettings(),
     };
-  }
-}
+  },
+
+  async setAll(values: Record<string, SettingValue>): Promise<void> {
+    await setManySettings(values);
+  },
+};

@@ -28,10 +28,10 @@ interface SettingsMenuFormData {
   indexRollTables: boolean;
 }
 
-export class AIDMSettingsMenu extends FormApplication {
+export class AIDMSettingsMenu extends foundry.appv1.api.FormApplication {
   #diagnostics?: OllamaDiagnosticsResult;
 
-  static override get defaultOptions(): FormApplicationOptions {
+  static override get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: `${MODULE_ID}-settings-menu`,
       classes: [MODULE_ID, "sheet"],
@@ -45,7 +45,11 @@ export class AIDMSettingsMenu extends FormApplication {
     });
   }
 
-  override async getData(): Promise<SettingsMenuTemplateData> {
+  constructor(object: object = {}, options: object = {}) {
+    super(object, options);
+  }
+
+  override getData(): SettingsMenuTemplateData {
     return {
       ...AIDMSettings.getAllSettings(),
       diagnostics: this.#diagnostics,
@@ -67,38 +71,42 @@ export class AIDMSettingsMenu extends FormApplication {
   ): Promise<void> {
     const normalized = this.#normalizeFormData(formData);
 
-    if (normalized.ollamaBaseUrl.length === 0 || normalized.chatModel.length === 0 || normalized.embeddingModel.length === 0) {
+    if (
+      normalized.ollamaBaseUrl.length === 0 ||
+      normalized.chatModel.length === 0 ||
+      normalized.embeddingModel.length === 0
+    ) {
       ui.notifications?.error("Ollama URL, chat model, and embedding model are required.");
       return;
     }
 
-    await Promise.all([
-      game.settings.set(MODULE_ID, "ollamaBaseUrl", normalized.ollamaBaseUrl),
-      game.settings.set(MODULE_ID, "chatModel", normalized.chatModel),
-      game.settings.set(MODULE_ID, "embeddingModel", normalized.embeddingModel),
-      game.settings.set(MODULE_ID, "requestTimeoutMs", normalized.requestTimeoutMs),
-      game.settings.set(MODULE_ID, "keepAlive", normalized.keepAlive),
-      game.settings.set(MODULE_ID, "chatTemperature", normalized.chatTemperature),
-      game.settings.set(MODULE_ID, "chatNumCtx", normalized.chatNumCtx),
-      game.settings.set(MODULE_ID, "debugLogging", normalized.debugLogging),
-      game.settings.set(MODULE_ID, "tonePreset", normalized.tonePreset),
-      game.settings.set(MODULE_ID, "confirmWrites", normalized.confirmWrites),
-      game.settings.set(MODULE_ID, "retrievalTopK", normalized.retrievalTopK),
-      game.settings.set(MODULE_ID, "chunkSize", normalized.chunkSize),
-      game.settings.set(MODULE_ID, "indexJournalEntries", normalized.indexJournalEntries),
-      game.settings.set(MODULE_ID, "indexScenes", normalized.indexScenes),
-      game.settings.set(MODULE_ID, "indexActors", normalized.indexActors),
-      game.settings.set(MODULE_ID, "indexItems", normalized.indexItems),
-      game.settings.set(MODULE_ID, "indexRollTables", normalized.indexRollTables),
-    ]);
+    await AIDMSettings.setAll({
+      ollamaBaseUrl: normalized.ollamaBaseUrl,
+      chatModel: normalized.chatModel,
+      embeddingModel: normalized.embeddingModel,
+      requestTimeoutMs: normalized.requestTimeoutMs,
+      keepAlive: normalized.keepAlive,
+      chatTemperature: normalized.chatTemperature,
+      chatNumCtx: normalized.chatNumCtx,
+      debugLogging: normalized.debugLogging,
+      tonePreset: normalized.tonePreset,
+      confirmWrites: normalized.confirmWrites,
+      retrievalTopK: normalized.retrievalTopK,
+      chunkSize: normalized.chunkSize,
+      indexJournalEntries: normalized.indexJournalEntries,
+      indexScenes: normalized.indexScenes,
+      indexActors: normalized.indexActors,
+      indexItems: normalized.indexItems,
+      indexRollTables: normalized.indexRollTables,
+    });
 
     ui.notifications?.info(`${MODULE_TITLE} settings saved.`);
     logger.info("Settings updated.", normalized);
-    await this.render(false);
+    this.render(false);
   }
 
   async #onTestConnection(): Promise<void> {
-    const normalized = this.#normalizeFormData(this._getSubmitData());
+    const normalized = this.#normalizeFormData(this._getSubmitData() as Record<string, unknown>);
     logger.info("Running Ollama diagnostics.", {
       baseUrl: normalized.ollamaBaseUrl,
       chatModel: normalized.chatModel,
@@ -122,60 +130,61 @@ export class AIDMSettingsMenu extends FormApplication {
       ui.notifications?.error("Ollama connection test failed.");
     }
 
-    await this.render(false);
+    this.render(false);
   }
 
   #normalizeFormData(formData: Record<string, unknown>): SettingsMenuFormData {
+    const clientSettings = AIDMSettings.getClientSettings();
+    const worldSettings = AIDMSettings.getWorldSettings();
+
     return {
-      ollamaBaseUrl: this.#stringValue(
-        formData.ollamaBaseUrl,
-        AIDMSettings.getClientSettings().ollamaBaseUrl,
-      ),
-      chatModel: this.#stringValue(formData.chatModel, AIDMSettings.getClientSettings().chatModel),
+      ollamaBaseUrl: this.#stringValue(formData["ollamaBaseUrl"], clientSettings.ollamaBaseUrl),
+      chatModel: this.#stringValue(formData["chatModel"], clientSettings.chatModel),
       embeddingModel: this.#stringValue(
-        formData.embeddingModel,
-        AIDMSettings.getClientSettings().embeddingModel,
+        formData["embeddingModel"],
+        clientSettings.embeddingModel,
       ),
       requestTimeoutMs: this.#numberValue(
-        formData.requestTimeoutMs,
-        AIDMSettings.getClientSettings().requestTimeoutMs,
+        formData["requestTimeoutMs"],
+        clientSettings.requestTimeoutMs,
         1000,
       ),
-      keepAlive: this.#stringValue(formData.keepAlive, AIDMSettings.getClientSettings().keepAlive),
+      keepAlive: this.#stringValue(formData["keepAlive"], clientSettings.keepAlive),
       chatTemperature: this.#numberValue(
-        formData.chatTemperature,
-        AIDMSettings.getClientSettings().chatTemperature,
+        formData["chatTemperature"],
+        clientSettings.chatTemperature,
         0,
       ),
-      chatNumCtx: this.#numberValue(
-        formData.chatNumCtx,
-        AIDMSettings.getClientSettings().chatNumCtx,
-        1024,
-      ),
-      debugLogging: this.#booleanValue(formData.debugLogging),
-      tonePreset: this.#stringValue(formData.tonePreset, AIDMSettings.getWorldSettings().tonePreset),
-      confirmWrites: this.#booleanValue(formData.confirmWrites),
+      chatNumCtx: this.#numberValue(formData["chatNumCtx"], clientSettings.chatNumCtx, 1024),
+      debugLogging: this.#booleanValue(formData["debugLogging"]),
+      tonePreset: this.#stringValue(formData["tonePreset"], worldSettings.tonePreset),
+      confirmWrites: this.#booleanValue(formData["confirmWrites"]),
       retrievalTopK: this.#numberValue(
-        formData.retrievalTopK,
-        AIDMSettings.getWorldSettings().retrievalTopK,
+        formData["retrievalTopK"],
+        worldSettings.retrievalTopK,
         1,
       ),
-      chunkSize: this.#numberValue(
-        formData.chunkSize,
-        AIDMSettings.getWorldSettings().chunkSize,
-        200,
-      ),
-      indexJournalEntries: this.#booleanValue(formData.indexJournalEntries),
-      indexScenes: this.#booleanValue(formData.indexScenes),
-      indexActors: this.#booleanValue(formData.indexActors),
-      indexItems: this.#booleanValue(formData.indexItems),
-      indexRollTables: this.#booleanValue(formData.indexRollTables),
+      chunkSize: this.#numberValue(formData["chunkSize"], worldSettings.chunkSize, 200),
+      indexJournalEntries: this.#booleanValue(formData["indexJournalEntries"]),
+      indexScenes: this.#booleanValue(formData["indexScenes"]),
+      indexActors: this.#booleanValue(formData["indexActors"]),
+      indexItems: this.#booleanValue(formData["indexItems"]),
+      indexRollTables: this.#booleanValue(formData["indexRollTables"]),
     };
   }
 
   #stringValue(value: unknown, fallback: string): string {
-    const normalized = String(value ?? fallback).trim();
-    return normalized.length > 0 ? normalized : fallback;
+    if (typeof value === "string") {
+      const normalized = value.trim();
+      return normalized.length > 0 ? normalized : fallback;
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      const normalized = String(value).trim();
+      return normalized.length > 0 ? normalized : fallback;
+    }
+
+    return fallback;
   }
 
   #numberValue(value: unknown, fallback: number, minValue: number): number {

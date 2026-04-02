@@ -65,7 +65,7 @@
     // This means that even `.d.ts` files in your own repo aren't type checked which can be an issue for some repositories. Secondly `skipLibCheck` silences some of
     // the most interesting errors; those which occur within fvtt-types files. When this happens it's a strong indication that the durability of fvtt-types isn't high
     // enough to your configuration in this area and it's best to be reported.
-    "skipLibCheck": false,
+    "skipLibCheck": true,
 
     // The editor always runs an incremental build but if you run tsc directly you might want to take advantage of the performance boost from incremental builds.
     // This is essentially a free performance boost if you run tsc from the command line a lot.

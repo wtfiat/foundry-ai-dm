@@ -10,7 +10,7 @@
   gap: 1rem;
 }
 
-.aidm-settings__section {
+.aidm-settings-section {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -20,62 +20,62 @@
   background: color-mix(in srgb, var(--color-bg) 94%, black);
 }
 
-.aidm-settings__section h2 {
+.aidm-settings-section h2 {
   margin: 0;
   font-size: 1rem;
 }
 
-.aidm-settings__field-grid {
+.aidm-settings-field-grid {
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.aidm-settings__field {
+.aidm-settings-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.aidm-settings__field label {
+.aidm-settings-field label {
   font-weight: 600;
 }
 
-.aidm-settings__field input[type="checkbox"] {
+.aidm-settings-field input[type="checkbox"] {
   align-self: flex-start;
 }
 
-.aidm-settings__diagnostics {
+.aidm-settings-diagnostics {
   border-left: 4px solid var(--color-border-highlight-alt);
 }
 
-.aidm-settings__diagnostics--ok {
+.aidm-settings-diagnostics-ok {
   border-left-color: var(--color-level-success);
 }
 
-.aidm-settings__diagnostics--warning {
+.aidm-settings-diagnostics-warning {
   border-left-color: var(--color-level-warning);
 }
 
-.aidm-settings__diagnostics--error {
+.aidm-settings-diagnostics-error {
   border-left-color: var(--color-level-error);
 }
 
-.aidm-settings__list {
+.aidm-settings-list {
   margin: 0;
   padding-left: 1.25rem;
 }
 
-.aidm-settings__code {
+.aidm-settings-code {
   margin: 0;
   padding: 0.75rem;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.1);
+  background: rgb(0 0 0 / 10%);
   overflow-x: auto;
   white-space: pre-wrap;
 }
 
-.aidm-settings__actions {
+.aidm-settings-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;

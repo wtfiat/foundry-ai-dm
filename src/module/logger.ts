@@ -2,9 +2,18 @@ import { MODULE_ID, MODULE_TITLE } from "./constants.ts";
 
 type LogMethod = "debug" | "info" | "warn" | "error";
 
+type GameSettingsReader = {
+  get: (namespace: string, key: string) => unknown;
+};
+
 function debugEnabled(): boolean {
   try {
-    return game.settings.get(MODULE_ID, "debugLogging") as boolean;
+    const settings = game.settings as unknown as GameSettingsReader | undefined;
+    if (settings == null) {
+      return true;
+    }
+
+    return Boolean(settings.get(MODULE_ID, "debugLogging"));
   } catch {
     return true;
   }
@@ -19,8 +28,16 @@ function write(method: LogMethod, ...args: unknown[]): void {
 }
 
 export const logger = {
-  debug: (...args: unknown[]) => write("debug", ...args),
-  info: (...args: unknown[]) => write("info", ...args),
-  warn: (...args: unknown[]) => write("warn", ...args),
-  error: (...args: unknown[]) => write("error", ...args),
+  debug: (...args: unknown[]): void => {
+    write("debug", ...args);
+  },
+  info: (...args: unknown[]): void => {
+    write("info", ...args);
+  },
+  warn: (...args: unknown[]): void => {
+    write("warn", ...args);
+  },
+  error: (...args: unknown[]): void => {
+    write("error", ...args);
+  },
 };
