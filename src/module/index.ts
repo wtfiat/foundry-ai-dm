@@ -5,12 +5,6 @@ import { runOllamaDiagnostics } from "./ollama/diagnostics.ts";
 import { openAIDMPanel, toggleAIDMPanel } from "./panel.ts";
 import { registerSettings, AIDMSettings } from "./settings.ts";
 
-type SceneControlToolRecord = Record<string, Record<string, unknown>> & {
-  tools?: Record<string, Record<string, unknown>>;
-};
-
-type SceneControlsRecord = Record<string, SceneControlToolRecord>;
-
 Hooks.once("init", () => {
   logger.info(`Initializing ${MODULE_TITLE}.`);
   registerSettings();
@@ -40,7 +34,9 @@ Hooks.once("init", () => {
         expectedEmbeddingModel: AIDMSettings.getClientSettings().embeddingModel,
       }),
     openPanel: () => openAIDMPanel(),
-    togglePanel: () => toggleAIDMPanel(),
+    togglePanel: () => {
+      toggleAIDMPanel();
+    },
   };
 });
 
@@ -55,23 +51,24 @@ Hooks.once("ready", () => {
   logger.debug("Current AI DM settings snapshot.", AIDMSettings.getAllSettings());
 });
 
-Hooks.on("getSceneControlButtons", (controls: SceneControlsRecord) => {
+Hooks.on("renderSceneControls", (_application, _element, context) => {
   if (!game.user?.isGM) {
     return;
   }
 
-  const tokenControls = controls["tokens"];
-  const tools = tokenControls?.tools;
-  if (tools == null) {
+  const tokenControls = context.controls.find(
+    (control) => control.name === "tokens" || control.name === "token",
+  );
+  if (tokenControls == null) {
     logger.warn("Unable to register AI DM panel toggle: token scene controls were unavailable.");
     return;
   }
 
-  tools[MODULE_ID] = {
+  tokenControls.tools[MODULE_ID] = {
     name: MODULE_ID,
     title: `${MODULE_TITLE} Panel`,
     icon: "fa-solid fa-wand-sparkles",
-    order: Object.keys(tools).length,
+    order: Object.keys(tokenControls.tools).length,
     button: true,
     visible: true,
     onChange: () => {

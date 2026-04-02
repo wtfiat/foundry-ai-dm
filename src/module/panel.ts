@@ -129,7 +129,7 @@ function buildToneInstruction(tonePreset: string): string {
     ].join(" ");
   }
 
-  return `Use the GM tone preset named \"${tonePreset}\" while staying concise and readable.`;
+  return `Use the GM tone preset named "${tonePreset}" while staying concise and readable.`;
 }
 
 function buildSystemPrompt(mode: PanelMode, tonePreset: string, context: RuntimeContextPreview): string {
@@ -278,19 +278,19 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       this.#abortController.abort();
     }
 
-    const position = this.position as Record<string, number | string | null | undefined>;
+    const position = this.position;
     const readNumericValue = (value: unknown): number | null =>
       typeof value === "number" && Number.isFinite(value) ? value : null;
 
     try {
       await AIDMSettings.setAll({
         panelPosition: {
-          left: readNumericValue(position["left"]),
-          top: readNumericValue(position["top"]),
+          left: readNumericValue(position.left),
+          top: readNumericValue(position.top),
         },
         panelSize: {
-          width: readNumericValue(position["width"]),
-          height: readNumericValue(position["height"]),
+          width: readNumericValue(position.width),
+          height: readNumericValue(position.height),
         },
       });
     } catch (error) {
