@@ -22,3 +22,6 @@ dist
 foundry-ai-dm-v0-build-last-mile.patch
 foundry-ai-dm-v0-panel-fixes-clean.patch
 foundry-ai-dm-v0-finalize-build.patch
+foundry-ai-dm-retrieval-slice-git.patch
+foundry-ai-dm.zip
+foundry-ai-dm-retrieval-build-fixes.patch

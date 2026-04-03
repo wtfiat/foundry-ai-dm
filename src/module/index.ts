@@ -3,6 +3,7 @@ import { logger } from "./logger.ts";
 import { OllamaClient } from "./ollama/client.ts";
 import { runOllamaDiagnostics } from "./ollama/diagnostics.ts";
 import { openAIDMPanel, toggleAIDMPanel } from "./panel.ts";
+import { buildWorldIndex, getRetrievalIndexMeta } from "./retrieval/service.ts";
 import { registerSettings, AIDMSettings } from "./settings.ts";
 
 type SceneControlToolRecord = Record<string, Record<string, unknown>> & {
@@ -45,6 +46,8 @@ Hooks.once("init", () => {
     togglePanel: () => {
       toggleAIDMPanel();
     },
+    getIndexMeta: async () => getRetrievalIndexMeta(),
+    buildIndex: async (mode: "build" | "refresh" = "build") => buildWorldIndex({ mode }),
   };
 });
 

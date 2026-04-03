@@ -12,7 +12,7 @@
         <span><strong>Embed:</strong> <code>{{configuredEmbeddingModel}}</code></span>
       </div>
 
-      <button type="button" class="aidm-button aidm-button-secondary" data-action="refresh-status" {{#if isBusy}}disabled{{/if}}>
+      <button type="button" class="aidm-button aidm-button-secondary" data-action="refresh-status" {{#if isBusy}}disabled{{/if}} {{#if isIndexBusy}}disabled{{/if}}>
         <i class="fa-solid fa-rotate"></i>
         Refresh status
       </button>
@@ -35,9 +35,35 @@
           <span class="aidm-chip aidm-chip-muted">No selected actor</span>
         {{/if}}
 
-        {{#unless retrievalReady}}
-          <span class="aidm-chip aidm-chip-warning">World retrieval not wired yet</span>
-        {{/unless}}
+        {{#if retrievalReady}}
+          <span class="aidm-chip aidm-chip-success">{{retrievalLabel}}</span>
+        {{else}}
+          <span class="aidm-chip aidm-chip-warning">{{retrievalLabel}}</span>
+        {{/if}}
+      </div>
+    </div>
+
+    <div class="aidm-panel-index-summary">
+      <div>
+        <strong>{{retrievalSummary}}</strong>
+        {{#if lastIndexedAtLabel}}
+          <div class="aidm-panel-index-meta">Last indexed: {{lastIndexedAtLabel}}</div>
+        {{/if}}
+        {{#if retrievalReady}}
+          <div class="aidm-panel-index-meta">{{indexedSourceCount}} sources • {{indexedChunkCount}} chunks</div>
+        {{/if}}
+      </div>
+
+      <div class="aidm-panel-button-row">
+        <button type="button" class="aidm-button aidm-button-secondary" data-action="build-index" {{#if isBusy}}disabled{{/if}} {{#if isIndexBusy}}disabled{{/if}}>
+          <i class="fa-solid fa-database"></i>
+          Build Index
+        </button>
+
+        <button type="button" class="aidm-button aidm-button-secondary" data-action="reindex-changed" {{#if isBusy}}disabled{{/if}} {{#if isIndexBusy}}disabled{{/if}}>
+          <i class="fa-solid fa-arrows-rotate"></i>
+          Reindex Changed
+        </button>
       </div>
     </div>
 
@@ -57,7 +83,7 @@
         <h2>Current panel conversation</h2>
       </div>
 
-      <button type="button" class="aidm-button aidm-button-secondary" data-action="clear-transcript" {{#if isBusy}}disabled{{/if}}>
+      <button type="button" class="aidm-button aidm-button-secondary" data-action="clear-transcript" {{#if isBusy}}disabled{{/if}} {{#if isIndexBusy}}disabled{{/if}}>
         <i class="fa-solid fa-trash"></i>
         Clear
       </button>
@@ -79,6 +105,17 @@
 
             <div class="aidm-panel-transcript-content">{{entry.content}}</div>
 
+            {{#if entry.sources.length}}
+              <div class="aidm-panel-source-list">
+                {{#each entry.sources as |source|}}
+                  <div class="aidm-panel-source-chip" title="{{source.excerpt}}">
+                    <div class="aidm-panel-source-chip-title">{{source.label}}</div>
+                    <div class="aidm-panel-source-chip-detail">{{source.detail}} • {{source.scoreLabel}}</div>
+                  </div>
+                {{/each}}
+              </div>
+            {{/if}}
+
             {{#if entry.meta}}
               <footer class="aidm-panel-transcript-meta">{{entry.meta}}</footer>
             {{/if}}
@@ -87,7 +124,7 @@
       {{else}}
         <div class="aidm-panel-empty-state">
           <p>No transcript yet.</p>
-          <p>Use this first slice to validate Ollama, exercise the four GM modes, and prove the local streaming path before we wire full world retrieval.</p>
+          <p>Build the world index, then use Narrate, NPC, Lore, and Recap to validate grounded co-DM behavior.</p>
         </div>
       {{/if}}
     </div>
@@ -105,7 +142,7 @@
     <div class="aidm-panel-composer-grid">
       <label class="aidm-panel-field">
         <span>Mode</span>
-        <select name="mode" {{#if isBusy}}disabled{{/if}}>
+        <select name="mode" {{#if isBusy}}disabled{{/if}} {{#if isIndexBusy}}disabled{{/if}}>
           {{#each modeOptions as |mode|}}
             <option value="{{mode.value}}" {{#if mode.selected}}selected{{/if}}>{{mode.label}}</option>
           {{/each}}
@@ -114,7 +151,7 @@
 
       <label class="aidm-panel-field aidm-panel-field-textarea">
         <span>Prompt</span>
-        <textarea name="prompt" rows="6" placeholder="Describe the next beat, ask a lore question, or request a recap." {{#if isBusy}}disabled{{/if}}>{{promptDraft}}</textarea>
+        <textarea name="prompt" rows="6" placeholder="Describe the next beat, ask a lore question, or request a recap." {{#if isBusy}}disabled{{/if}} {{#if isIndexBusy}}disabled{{/if}}>{{promptDraft}}</textarea>
       </label>
     </div>
 
@@ -129,7 +166,7 @@
           </button>
         {{/if}}
 
-        <button type="submit" class="aidm-button aidm-button-primary" {{#if isBusy}}disabled{{/if}}>
+        <button type="submit" class="aidm-button aidm-button-primary" {{#if isBusy}}disabled{{/if}} {{#if isIndexBusy}}disabled{{/if}}>
           <i class="fa-solid fa-paper-plane"></i>
           Send to AI DM
         </button>
