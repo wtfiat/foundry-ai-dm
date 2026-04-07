@@ -116,6 +116,32 @@
               </div>
             {{/if}}
 
+            {{#if entry.hasSaveControls}}
+              <div class="aidm-panel-transcript-actions">
+                {{#if entry.savedRecapLabel}}
+                  <span class="aidm-chip aidm-chip-success">{{entry.savedRecapLabel}}</span>
+                {{else}}
+                  {{#if entry.canSaveRecap}}
+                  <button type="button" class="aidm-button aidm-button-secondary" data-action="save-recap" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
+                    <i class="fa-solid fa-book-open"></i>
+                    Save as Recap
+                  </button>
+                  {{/if}}
+                {{/if}}
+
+                {{#if entry.savedMemoryLabel}}
+                  <span class="aidm-chip aidm-chip-success">{{entry.savedMemoryLabel}}</span>
+                {{else}}
+                  {{#if entry.canSaveMemory}}
+                  <button type="button" class="aidm-button aidm-button-secondary" data-action="save-memory" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
+                    <i class="fa-solid fa-brain"></i>
+                    Save Memory
+                  </button>
+                  {{/if}}
+                {{/if}}
+              </div>
+            {{/if}}
+
             {{#if entry.meta}}
               <footer class="aidm-panel-transcript-meta">{{entry.meta}}</footer>
             {{/if}}

@@ -265,6 +265,13 @@
   line-height: 1.45;
 }
 
+
+.aidm-panel-transcript-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
 .aidm-panel-transcript-meta,
 .aidm-panel-tone,
 .aidm-panel-composer-hint {

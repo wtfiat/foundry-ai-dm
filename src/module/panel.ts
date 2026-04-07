@@ -1,5 +1,6 @@
 import { MODULE_ID, MODULE_TITLE } from "./constants.ts";
 import { logger } from "./logger.ts";
+import { saveAIDMJournalEntry } from "./memory.ts";
 import { type OllamaChatMessage, OllamaClient, OllamaRequestError } from "./ollama/client.ts";
 import { runOllamaDiagnostics, type OllamaDiagnosticsResult } from "./ollama/diagnostics.ts";
 import {
@@ -7,7 +8,7 @@ import {
   getRetrievalIndexMeta,
   retrieveIndexedContext,
 } from "./retrieval/service.ts";
-import { sourceTypeLabel } from "./retrieval/text.ts";
+import { createExcerpt, sourceTypeLabel } from "./retrieval/text.ts";
 import { type RetrievalCitation, type RetrievalIndexMeta } from "./retrieval/types.ts";
 import { AIDMSettings } from "./settings.ts";
 
@@ -23,6 +24,7 @@ interface PanelModeOption {
 
 interface PanelSourceChip {
   id: string;
+  uuid: string;
   label: string;
   detail: string;
   excerpt: string;
@@ -39,7 +41,18 @@ interface PanelTranscriptEntry {
   pending: boolean;
   error: boolean;
   meta?: string;
+  modelName?: string;
+  savedRecapUuid?: string;
+  savedMemoryUuid?: string;
   sources: PanelSourceChip[];
+}
+
+interface PanelTranscriptEntryView extends PanelTranscriptEntry {
+  canSaveRecap: boolean;
+  canSaveMemory: boolean;
+  hasSaveControls: boolean;
+  savedRecapLabel?: string;
+  savedMemoryLabel?: string;
 }
 
 interface RuntimeContextPreview {
@@ -54,7 +67,7 @@ interface PanelTemplateData {
   modeOptions: PanelModeOption[];
   selectedMode: PanelMode;
   promptDraft: string;
-  transcript: PanelTranscriptEntry[];
+  transcript: PanelTranscriptEntryView[];
   isBusy: boolean;
   canCancel: boolean;
   isIndexBusy: boolean;
@@ -265,10 +278,50 @@ function formatIndexedTimestamp(value: number | undefined): string | null {
 function citationToChip(citation: RetrievalCitation): PanelSourceChip {
   return {
     id: citation.sourceId,
+    uuid: citation.uuid,
     label: citation.title,
     detail: `${sourceTypeLabel(citation.type)}${citation.subtitle != null ? ` • ${citation.subtitle}` : ""}`,
     excerpt: citation.excerpt,
     scoreLabel: citation.score.toFixed(3),
+  };
+}
+
+function canPersistTranscriptEntry(entry: PanelTranscriptEntry): boolean {
+  return (
+    entry.role === "assistant" &&
+    !entry.pending &&
+    !entry.error &&
+    entry.content.trim().length > 0
+  );
+}
+
+function suggestedMemoryTitle(entry: PanelTranscriptEntry): string {
+  const firstLine = entry.content
+    .replace(/\r/g, "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (firstLine != null) {
+    return createExcerpt(firstLine, 64);
+  }
+
+  return `${entry.modeLabel} Memory`;
+}
+
+function entryView(entry: PanelTranscriptEntry): PanelTranscriptEntryView {
+  const canSaveRecap = canPersistTranscriptEntry(entry) && entry.savedRecapUuid == null;
+  const canSaveMemory = canPersistTranscriptEntry(entry) && entry.savedMemoryUuid == null;
+  const savedRecapLabel = entry.savedRecapUuid != null ? "Recap saved" : undefined;
+  const savedMemoryLabel = entry.savedMemoryUuid != null ? "Memory saved" : undefined;
+
+  return {
+    ...entry,
+    canSaveRecap,
+    canSaveMemory,
+    hasSaveControls: canSaveRecap || canSaveMemory || savedRecapLabel != null || savedMemoryLabel != null,
+    savedRecapLabel,
+    savedMemoryLabel,
   };
 }
 
@@ -325,7 +378,7 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       })),
       selectedMode: this.#selectedMode,
       promptDraft: this.#promptDraft,
-      transcript: [...this.#transcript],
+      transcript: this.#transcript.map(entryView),
       isBusy: this.#isBusy,
       canCancel: this.#abortController != null,
       isIndexBusy: this.#indexBusy,
@@ -401,6 +454,32 @@ export class AIDMPanel extends foundry.appv1.api.Application {
     html.find('[data-action="clear-transcript"]').on("click", (event) => {
       event.preventDefault();
       this.#clearTranscript();
+    });
+
+    html.find('[data-action="save-recap"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#saveTranscriptEntry("recap", entryId);
+      }
+    });
+
+    html.find('[data-action="save-memory"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#saveTranscriptEntry("memory", entryId);
+      }
     });
 
     html.find('[data-action="cancel-request"]').on("click", (event) => {
@@ -536,6 +615,103 @@ export class AIDMPanel extends foundry.appv1.api.Application {
     }
   }
 
+  async #saveTranscriptEntry(kind: "recap" | "memory", entryId: string): Promise<void> {
+    if (this.#isBusy || this.#indexBusy) {
+      ui.notifications?.warn("Wait for the current operation to finish before saving AI DM notes.");
+      return;
+    }
+
+    const entry = this.#transcript.find((candidate) => candidate.id === entryId);
+    if (entry == null || !canPersistTranscriptEntry(entry)) {
+      ui.notifications?.warn("Only completed AI DM responses can be saved to campaign memory.");
+      return;
+    }
+
+    if (kind === "recap" && entry.savedRecapUuid != null) {
+      ui.notifications?.info("This response has already been saved as a recap.");
+      return;
+    }
+
+    if (kind === "memory" && entry.savedMemoryUuid != null) {
+      ui.notifications?.info("This response has already been saved as a memory note.");
+      return;
+    }
+
+    let requestedTitle: string | undefined;
+    if (kind === "memory") {
+      const defaultTitle = suggestedMemoryTitle(entry);
+      const promptedTitle = window.prompt("Memory note title", defaultTitle);
+      if (promptedTitle == null) {
+        return;
+      }
+
+      const trimmedTitle = promptedTitle.trim();
+      requestedTitle = trimmedTitle.length > 0 ? trimmedTitle : defaultTitle;
+    }
+
+    const worldSettings = AIDMSettings.getWorldSettings();
+    if (worldSettings.confirmWrites) {
+      const confirmationMessage =
+        kind === "recap"
+          ? "Save this AI response as a session recap in the AI DM journals?"
+          : `Save this AI response as a memory note titled "${requestedTitle ?? "Campaign Memory"}"?`;
+
+      if (!window.confirm(confirmationMessage)) {
+        return;
+      }
+    }
+
+    this.#indexBusy = true;
+    this.#indexSummaryOverride =
+      kind === "recap" ? "Saving session recap to AI DM journals..." : "Saving memory note to AI DM journals...";
+    this.render(false);
+
+    try {
+      const saved = await saveAIDMJournalEntry({
+        kind,
+        mode: entry.mode,
+        content: entry.content,
+        modelName: entry.modelName ?? AIDMSettings.getClientSettings().chatModel,
+        sources: entry.sources.map((source) => ({
+          uuid: source.uuid,
+          label: source.label,
+          detail: source.detail,
+          excerpt: source.excerpt,
+        })),
+        transcriptEntryId: entry.id,
+        requestedTitle,
+      });
+
+      if (kind === "recap") {
+        entry.savedRecapUuid = saved.pageUuid ?? saved.journalUuid ?? saved.entryName;
+      } else {
+        entry.savedMemoryUuid = saved.pageUuid ?? saved.journalUuid ?? saved.entryName;
+      }
+
+      ui.notifications?.info(
+        `${kind === "recap" ? "Recap" : "Memory note"} saved to ${saved.folderPath}. Reindexing now...`,
+      );
+      logger.info("AI DM transcript entry saved.", {
+        kind,
+        entryId,
+        journalUuid: saved.journalUuid,
+        pageUuid: saved.pageUuid,
+      });
+    } catch (error) {
+      logger.error("Unable to save AI DM transcript entry.", error);
+      const message =
+        error instanceof Error ? `Unable to save AI DM journal entry: ${error.message}` : "Unable to save AI DM journal entry.";
+      this.#indexSummaryOverride = message;
+      ui.notifications?.error(message);
+      return;
+    } finally {
+      this.#indexBusy = false;
+      this.render(false);
+    }
+
+    await this.#runIndexBuild((this.#indexMeta?.chunkCount ?? 0) > 0 ? "refresh" : "build");
+  }
+
   async #submitPrompt(): Promise<void> {
     if (this.#isBusy || this.#indexBusy) {
       return;
@@ -570,6 +746,7 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       content: prompt,
       pending: false,
       error: false,
+      modelName: undefined,
       sources: [],
     };
 
@@ -583,6 +760,7 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       pending: true,
       error: false,
       meta: `Model: ${clientSettings.chatModel}`,
+      modelName: clientSettings.chatModel,
       sources: retrievedContext.citations.map(citationToChip),
     };
 
@@ -633,6 +811,7 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       );
 
       assistantEntry.pending = false;
+      assistantEntry.modelName = response.model;
       assistantEntry.meta = [
         `Model: ${response.model}`,
         response.eval_count != null ? `Tokens: ${String(response.eval_count)}` : undefined,
