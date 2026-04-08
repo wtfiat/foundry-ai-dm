@@ -229,9 +229,7 @@ export class OllamaClient {
     const url = new URL("/api/chat", this.#baseUrl).toString();
     const controller = new AbortController();
     let timedOut = false;
-    let externallyAborted = false;
     const abortFromExternalSignal = (): void => {
-      externallyAborted = true;
       controller.abort();
     };
 
@@ -319,7 +317,7 @@ export class OllamaClient {
       handlers.onComplete?.(lastChunk);
       return lastChunk;
     } catch (error) {
-      if (externallyAborted) {
+      if (handlers.signal?.aborted === true) {
         throw new OllamaRequestError({
           code: "aborted",
           message: `Request to ${url} was cancelled.`,

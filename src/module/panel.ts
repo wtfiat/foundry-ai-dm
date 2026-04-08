@@ -1,7 +1,16 @@
+import { openDocumentByUuid, deleteDocumentByUuid } from "./document-links.ts";
 import { MODULE_ID, MODULE_TITLE } from "./constants.ts";
 import { logger } from "./logger.ts";
+import { saveAIDMJournalEntry } from "./memory.ts";
 import { type OllamaChatMessage, OllamaClient, OllamaRequestError } from "./ollama/client.ts";
 import { runOllamaDiagnostics, type OllamaDiagnosticsResult } from "./ollama/diagnostics.ts";
+import {
+  buildWorldIndex,
+  getRetrievalIndexMeta,
+  retrieveIndexedContext,
+} from "./retrieval/service.ts";
+import { createExcerpt, sourceTypeLabel } from "./retrieval/text.ts";
+import { type RetrievalCitation, type RetrievalIndexMeta } from "./retrieval/types.ts";
 import { AIDMSettings } from "./settings.ts";
 
 type PanelMode = "narrate" | "npc" | "lore" | "recap";
@@ -14,6 +23,15 @@ interface PanelModeOption {
   selected: boolean;
 }
 
+interface PanelSourceChip {
+  id: string;
+  uuid: string;
+  label: string;
+  detail: string;
+  excerpt: string;
+  scoreLabel: string;
+}
+
 interface PanelTranscriptEntry {
   id: string;
   role: TranscriptRole;
@@ -24,6 +42,18 @@ interface PanelTranscriptEntry {
   pending: boolean;
   error: boolean;
   meta?: string;
+  modelName?: string;
+  savedRecapUuid?: string;
+  savedMemoryUuid?: string;
+  sources: PanelSourceChip[];
+}
+
+interface PanelTranscriptEntryView extends PanelTranscriptEntry {
+  canSaveRecap: boolean;
+  canSaveMemory: boolean;
+  hasSaveControls: boolean;
+  savedRecapLabel?: string;
+  savedMemoryLabel?: string;
 }
 
 interface RuntimeContextPreview {
@@ -38,9 +68,10 @@ interface PanelTemplateData {
   modeOptions: PanelModeOption[];
   selectedMode: PanelMode;
   promptDraft: string;
-  transcript: PanelTranscriptEntry[];
+  transcript: PanelTranscriptEntryView[];
   isBusy: boolean;
   canCancel: boolean;
+  isIndexBusy: boolean;
   connectionState: ConnectionState;
   connectionLabel: string;
   connectionSummary: string;
@@ -48,10 +79,15 @@ interface PanelTemplateData {
   configuredEmbeddingModel: string;
   tonePreset: string;
   retrievalReady: boolean;
+  retrievalLabel: string;
+  retrievalSummary: string;
   activeSceneName: string | null;
   selectedActorName: string | null;
   controlledTokenNames: string[];
   sceneSummary: string[];
+  indexedSourceCount: number;
+  indexedChunkCount: number;
+  lastIndexedAtLabel: string | null;
 }
 
 const PANEL_TEMPLATE_PATH = `modules/${MODULE_ID}/templates/ai-dm-panel.hbs`;
@@ -129,28 +165,44 @@ function buildToneInstruction(tonePreset: string): string {
     ].join(" ");
   }
 
-  return `Use the GM tone preset named \"${tonePreset}\" while staying concise and readable.`;
+  return `Use the GM tone preset named "${tonePreset}" while staying concise and readable.`;
 }
 
-function buildSystemPrompt(mode: PanelMode, tonePreset: string, context: RuntimeContextPreview): string {
+function buildSystemPrompt(input: {
+  mode: PanelMode;
+  tonePreset: string;
+  context: RuntimeContextPreview;
+  retrievalReady: boolean;
+  retrievalContext: string;
+}): string {
   const lines: string[] = [
     "You are Foundry AI DM, a GM-only co-DM running inside Foundry Virtual Tabletop.",
-    buildToneInstruction(tonePreset),
+    buildToneInstruction(input.tonePreset),
     "You are assisting the Game Master, not speaking to players unless the GM asks you to do so.",
-    "This slice does not have full-world retrieval yet.",
-    "You only have the live panel transcript, the currently active scene name, and the currently controlled token or actor names.",
-    "Do not claim to know campaign facts that are not present in the prompt or current runtime context.",
-    "If the GM asks for broader world lore than the runtime context provides, say that the world index is not connected yet.",
+    input.retrievalReady
+      ? "You have indexed world context for this request. Prefer that indexed context over guesswork."
+      : "This slice may not have full-world retrieval available yet.",
+    "Do not claim to know campaign facts that are not present in the prompt, transcript, runtime context, or retrieved index excerpts.",
+    "If you do not have enough information, say so plainly instead of inventing canon.",
   ];
 
-  if (context.sceneSummary.length > 0) {
+  if (input.context.sceneSummary.length > 0) {
     lines.push("Current runtime context:");
-    lines.push(...context.sceneSummary.map((summary) => `- ${summary}`));
+    lines.push(...input.context.sceneSummary.map((summary) => `- ${summary}`));
   } else {
-    lines.push("Current runtime context is minimal: there is no active scene or controlled token context available.");
+    lines.push(
+      "Current runtime context is minimal: there is no active scene or controlled token context available.",
+    );
   }
 
-  switch (mode) {
+  if (input.retrievalContext.trim().length > 0) {
+    lines.push("Retrieved world index excerpts for this request:");
+    lines.push(input.retrievalContext);
+  } else if (input.retrievalReady) {
+    lines.push("The world index is available, but this request did not retrieve any strong matches.");
+  }
+
+  switch (input.mode) {
     case "narrate":
       lines.push(
         "Mode: Narrate Scene.",
@@ -169,14 +221,14 @@ function buildSystemPrompt(mode: PanelMode, tonePreset: string, context: Runtime
     case "lore":
       lines.push(
         "Mode: Lore / World Q&A.",
-        "Answer only from the prompt and current runtime context.",
-        "If you do not have enough information, say that plainly instead of inventing canon.",
+        "Answer from indexed sources when they are present.",
+        "If retrieval is weak or unavailable, say that clearly instead of improvising unsupported lore.",
       );
       break;
     case "recap":
       lines.push(
         "Mode: Session Recap.",
-        "Summarize the current panel transcript and prompt as if preparing GM notes.",
+        "Summarize the current panel transcript and the indexed context that was surfaced during the conversation as if preparing GM notes.",
         "Structure the answer with Markdown headings for Summary, Open Hooks, NPCs, and Consequences.",
       );
       break;
@@ -185,13 +237,15 @@ function buildSystemPrompt(mode: PanelMode, tonePreset: string, context: Runtime
   return lines.join("\n");
 }
 
-function buildConversationMessages(
-  transcript: PanelTranscriptEntry[],
-  mode: PanelMode,
-  tonePreset: string,
-  context: RuntimeContextPreview,
-): OllamaChatMessage[] {
-  const history = transcript
+function buildConversationMessages(input: {
+  transcript: PanelTranscriptEntry[];
+  mode: PanelMode;
+  tonePreset: string;
+  context: RuntimeContextPreview;
+  retrievalReady: boolean;
+  retrievalContext: string;
+}): OllamaChatMessage[] {
+  const history = input.transcript
     .filter((entry) => (entry.role === "user" || entry.role === "assistant") && !entry.pending)
     .slice(-10)
     .map<OllamaChatMessage>((entry) => ({
@@ -202,10 +256,74 @@ function buildConversationMessages(
   return [
     {
       role: "system",
-      content: buildSystemPrompt(mode, tonePreset, context),
+      content: buildSystemPrompt({
+        mode: input.mode,
+        tonePreset: input.tonePreset,
+        context: input.context,
+        retrievalReady: input.retrievalReady,
+        retrievalContext: input.retrievalContext,
+      }),
     },
     ...history,
   ];
+}
+
+function formatIndexedTimestamp(value: number | undefined): string | null {
+  if (value == null || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return new Date(value).toLocaleString();
+}
+
+function citationToChip(citation: RetrievalCitation): PanelSourceChip {
+  return {
+    id: citation.sourceId,
+    uuid: citation.uuid,
+    label: citation.title,
+    detail: `${sourceTypeLabel(citation.type)}${citation.subtitle != null ? ` • ${citation.subtitle}` : ""}`,
+    excerpt: citation.excerpt,
+    scoreLabel: citation.score.toFixed(3),
+  };
+}
+
+function canPersistTranscriptEntry(entry: PanelTranscriptEntry): boolean {
+  return (
+    entry.role === "assistant" &&
+    !entry.pending &&
+    !entry.error &&
+    entry.content.trim().length > 0
+  );
+}
+
+function suggestedMemoryTitle(entry: PanelTranscriptEntry): string {
+  const firstLine = entry.content
+    .replace(/\r/g, "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (firstLine != null) {
+    return createExcerpt(firstLine, 64);
+  }
+
+  return `${entry.modeLabel} Memory`;
+}
+
+function entryView(entry: PanelTranscriptEntry): PanelTranscriptEntryView {
+  const canSaveRecap = canPersistTranscriptEntry(entry) && entry.savedRecapUuid == null;
+  const canSaveMemory = canPersistTranscriptEntry(entry) && entry.savedMemoryUuid == null;
+  const savedRecapLabel = entry.savedRecapUuid != null ? "Recap saved" : undefined;
+  const savedMemoryLabel = entry.savedMemoryUuid != null ? "Memory saved" : undefined;
+
+  return {
+    ...entry,
+    canSaveRecap,
+    canSaveMemory,
+    hasSaveControls: canSaveRecap || canSaveMemory || savedRecapLabel != null || savedMemoryLabel != null,
+    savedRecapLabel,
+    savedMemoryLabel,
+  };
 }
 
 export class AIDMPanel extends foundry.appv1.api.Application {
@@ -215,16 +333,20 @@ export class AIDMPanel extends foundry.appv1.api.Application {
   #diagnostics?: OllamaDiagnosticsResult;
   #connectionState: ConnectionState = "unknown";
   #isBusy = false;
+  #indexBusy = false;
   #abortController?: AbortController;
   #autoCheckedConnection = false;
+  #autoLoadedIndex = false;
+  #indexMeta: RetrievalIndexMeta | null = null;
+  #indexSummaryOverride: string | null = null;
 
   static override get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: `${MODULE_ID}-panel`,
       classes: [MODULE_ID, "sheet", "aidm-panel"],
       template: PANEL_TEMPLATE_PATH,
-      width: 520,
-      height: 720,
+      width: 560,
+      height: 760,
       resizable: true,
       minimizable: true,
       title: `${MODULE_TITLE} Panel`,
@@ -247,6 +369,7 @@ export class AIDMPanel extends foundry.appv1.api.Application {
     const clientSettings = AIDMSettings.getClientSettings();
     const worldSettings = AIDMSettings.getWorldSettings();
     const runtimeContext = getRuntimeContextPreview();
+    const retrievalReady = (this.#indexMeta?.chunkCount ?? 0) > 0;
 
     return {
       moduleTitle: MODULE_TITLE,
@@ -256,20 +379,26 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       })),
       selectedMode: this.#selectedMode,
       promptDraft: this.#promptDraft,
-      transcript: [...this.#transcript],
+      transcript: this.#transcript.map(entryView),
       isBusy: this.#isBusy,
       canCancel: this.#abortController != null,
+      isIndexBusy: this.#indexBusy,
       connectionState: this.#connectionState,
       connectionLabel: this.#connectionLabel(),
       connectionSummary: this.#connectionSummary(),
       configuredChatModel: clientSettings.chatModel,
       configuredEmbeddingModel: clientSettings.embeddingModel,
       tonePreset: worldSettings.tonePreset,
-      retrievalReady: false,
+      retrievalReady,
+      retrievalLabel: this.#retrievalLabel(),
+      retrievalSummary: this.#retrievalSummary(),
       activeSceneName: runtimeContext.activeSceneName,
       selectedActorName: runtimeContext.selectedActorName,
       controlledTokenNames: runtimeContext.controlledTokenNames,
       sceneSummary: runtimeContext.sceneSummary,
+      indexedSourceCount: this.#indexMeta?.sourceCount ?? 0,
+      indexedChunkCount: this.#indexMeta?.chunkCount ?? 0,
+      lastIndexedAtLabel: formatIndexedTimestamp(this.#indexMeta?.builtAt),
     };
   }
 
@@ -278,19 +407,19 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       this.#abortController.abort();
     }
 
-    const position = this.position as Record<string, number | string | null | undefined>;
+    const { left, top, width, height } = this.position;
     const readNumericValue = (value: unknown): number | null =>
       typeof value === "number" && Number.isFinite(value) ? value : null;
 
     try {
       await AIDMSettings.setAll({
         panelPosition: {
-          left: readNumericValue(position["left"]),
-          top: readNumericValue(position["top"]),
+          left: readNumericValue(left),
+          top: readNumericValue(top),
         },
         panelSize: {
-          width: readNumericValue(position["width"]),
-          height: readNumericValue(position["height"]),
+          width: readNumericValue(width),
+          height: readNumericValue(height),
         },
       });
     } catch (error) {
@@ -313,9 +442,110 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       void this.refreshConnectionStatus();
     });
 
+    html.find('[data-action="build-index"]').on("click", (event) => {
+      event.preventDefault();
+      void this.#runIndexBuild("build");
+    });
+
+    html.find('[data-action="reindex-changed"]').on("click", (event) => {
+      event.preventDefault();
+      void this.#runIndexBuild("refresh");
+    });
+
     html.find('[data-action="clear-transcript"]').on("click", (event) => {
       event.preventDefault();
       this.#clearTranscript();
+    });
+
+    html.find('[data-action="save-recap"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#saveTranscriptEntry("recap", entryId);
+      }
+    });
+
+    html.find('[data-action="save-memory"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#saveTranscriptEntry("memory", entryId);
+      }
+    });
+
+    html.find('[data-action="open-source"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const sourceUuid = target.dataset["sourceUuid"];
+      if (sourceUuid != null) {
+        void this.#openSourceDocument(sourceUuid);
+      }
+    });
+
+    html.find('[data-action="open-saved-recap"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#openSavedEntry("recap", entryId);
+      }
+    });
+
+    html.find('[data-action="delete-saved-recap"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#deleteSavedEntry("recap", entryId);
+      }
+    });
+
+    html.find('[data-action="open-saved-memory"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#openSavedEntry("memory", entryId);
+      }
+    });
+
+    html.find('[data-action="delete-saved-memory"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#deleteSavedEntry("memory", entryId);
+      }
     });
 
     html.find('[data-action="cancel-request"]').on("click", (event) => {
@@ -338,12 +568,9 @@ export class AIDMPanel extends foundry.appv1.api.Application {
     });
 
     html.find('[name="prompt"]').on("keydown", (event) => {
-      if (!(event instanceof KeyboardEvent)) {
-        return;
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-        event.preventDefault();
+      const keyEvent = event as JQuery.KeyDownEvent;
+      if ((keyEvent.ctrlKey || keyEvent.metaKey) && keyEvent.key === "Enter") {
+        keyEvent.preventDefault();
         void this.#submitPrompt();
       }
     });
@@ -352,10 +579,15 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       this.#autoCheckedConnection = true;
       void this.refreshConnectionStatus();
     }
+
+    if (!this.#autoLoadedIndex) {
+      this.#autoLoadedIndex = true;
+      void this.refreshIndexStatus();
+    }
   }
 
   async refreshConnectionStatus(): Promise<void> {
-    if (this.#isBusy || this.#connectionState === "checking") {
+    if (this.#isBusy || this.#indexBusy || this.#connectionState === "checking") {
       return;
     }
 
@@ -393,8 +625,250 @@ export class AIDMPanel extends foundry.appv1.api.Application {
     this.render(false);
   }
 
+  async refreshIndexStatus(): Promise<void> {
+    try {
+      this.#indexMeta = await getRetrievalIndexMeta();
+    } catch (error) {
+      logger.warn("Unable to load retrieval index status.", error);
+      this.#indexMeta = null;
+      this.#indexSummaryOverride = "Unable to load retrieval index status.";
+    }
+
+    this.render(false);
+  }
+
+  async #runIndexBuild(mode: "build" | "refresh"): Promise<void> {
+    if (this.#isBusy || this.#indexBusy) {
+      return;
+    }
+
+    this.#indexBusy = true;
+    this.#indexSummaryOverride =
+      mode === "build" ? "Building retrieval index from scratch..." : "Reindexing changed world documents...";
+    this.render(false);
+
+    try {
+      const summary = await buildWorldIndex({
+        mode,
+        onProgress: (update) => {
+          this.#indexSummaryOverride = update.message;
+          this.render(false);
+        },
+      });
+
+      this.#indexMeta = summary.meta;
+      this.#indexSummaryOverride =
+        mode === "build"
+          ? `Built ${String(summary.sourceCount)} sources and ${String(summary.chunkCount)} chunks.`
+          : `Indexed ${String(summary.sourceCount)} sources and ${String(summary.chunkCount)} chunks. Reused ${String(summary.reusedSourceCount)} unchanged sources.`;
+
+      const firstWarning = summary.warnings[0];
+      if (firstWarning !== undefined) {
+        ui.notifications?.warn(firstWarning);
+      } else {
+        ui.notifications?.info(this.#indexSummaryOverride);
+      }
+
+      logger.info("Retrieval index operation completed.", summary);
+    } catch (error) {
+      logger.error("Retrieval index operation failed.", error);
+      this.#indexSummaryOverride =
+        error instanceof Error ? `Indexing failed: ${error.message}` : "Indexing failed unexpectedly.";
+      ui.notifications?.error(this.#indexSummaryOverride);
+    } finally {
+      this.#indexBusy = false;
+      this.render(false);
+    }
+  }
+
+  async #saveTranscriptEntry(kind: "recap" | "memory", entryId: string): Promise<void> {
+    if (this.#isBusy || this.#indexBusy) {
+      ui.notifications?.warn("Wait for the current operation to finish before saving AI DM notes.");
+      return;
+    }
+
+    const entry = this.#transcript.find((candidate) => candidate.id === entryId);
+    if (entry == null || !canPersistTranscriptEntry(entry)) {
+      ui.notifications?.warn("Only completed AI DM responses can be saved to campaign memory.");
+      return;
+    }
+
+    if (kind === "recap" && entry.savedRecapUuid != null) {
+      ui.notifications?.info("This response has already been saved as a recap.");
+      return;
+    }
+
+    if (kind === "memory" && entry.savedMemoryUuid != null) {
+      ui.notifications?.info("This response has already been saved as a memory note.");
+      return;
+    }
+
+    let requestedTitle: string | undefined;
+    if (kind === "memory") {
+      const defaultTitle = suggestedMemoryTitle(entry);
+      const promptedTitle = window.prompt("Memory note title", defaultTitle);
+      if (promptedTitle == null) {
+        return;
+      }
+
+      const trimmedTitle = promptedTitle.trim();
+      requestedTitle = trimmedTitle.length > 0 ? trimmedTitle : defaultTitle;
+    }
+
+    const worldSettings = AIDMSettings.getWorldSettings();
+    if (worldSettings.confirmWrites) {
+      const confirmationMessage =
+        kind === "recap"
+          ? "Save this AI response as a session recap in the AI DM journals?"
+          : `Save this AI response as a memory note titled "${requestedTitle ?? "Campaign Memory"}"?`;
+
+      if (!window.confirm(confirmationMessage)) {
+        return;
+      }
+    }
+
+    this.#indexBusy = true;
+    this.#indexSummaryOverride =
+      kind === "recap" ? "Saving session recap to AI DM journals..." : "Saving memory note to AI DM journals...";
+    this.render(false);
+
+    try {
+      const saved = await saveAIDMJournalEntry({
+        kind,
+        mode: entry.mode,
+        content: entry.content,
+        modelName: entry.modelName ?? AIDMSettings.getClientSettings().chatModel,
+        sources: entry.sources.map((source) => ({
+          uuid: source.uuid,
+          label: source.label,
+          detail: source.detail,
+          excerpt: source.excerpt,
+        })),
+        transcriptEntryId: entry.id,
+        requestedTitle,
+      });
+
+      if (kind === "recap") {
+        entry.savedRecapUuid = saved.pageUuid ?? saved.journalUuid ?? saved.entryName;
+      } else {
+        entry.savedMemoryUuid = saved.pageUuid ?? saved.journalUuid ?? saved.entryName;
+      }
+
+      ui.notifications?.info(
+        `${kind === "recap" ? "Recap" : "Memory note"} saved to ${saved.folderPath}. Reindexing now...`,
+      );
+      logger.info("AI DM transcript entry saved.", {
+        kind,
+        entryId,
+        journalUuid: saved.journalUuid,
+        pageUuid: saved.pageUuid,
+      });
+    } catch (error) {
+      logger.error("Unable to save AI DM transcript entry.", error);
+      const message =
+        error instanceof Error ? `Unable to save AI DM journal entry: ${error.message}` : "Unable to save AI DM journal entry.";
+      this.#indexSummaryOverride = message;
+      ui.notifications?.error(message);
+      return;
+    } finally {
+      this.#indexBusy = false;
+      this.render(false);
+    }
+
+    await this.#runIndexBuild((this.#indexMeta?.chunkCount ?? 0) > 0 ? "refresh" : "build");
+  }
+
+  async #openSourceDocument(uuid: string): Promise<void> {
+    try {
+      const opened = await openDocumentByUuid(uuid);
+      if (!opened) {
+        ui.notifications?.warn("Unable to open the selected source document.");
+      }
+    } catch (error) {
+      logger.error("Unable to open source document.", error);
+      ui.notifications?.error("Unable to open the selected source document.");
+    }
+  }
+
+  async #openSavedEntry(kind: "recap" | "memory", entryId: string): Promise<void> {
+    const entry = this.#transcript.find((candidate) => candidate.id === entryId);
+    if (entry == null) {
+      ui.notifications?.warn("The saved AI DM entry could not be found in the transcript.");
+      return;
+    }
+
+    const uuid = kind === "recap" ? entry.savedRecapUuid : entry.savedMemoryUuid;
+    if (uuid == null) {
+      ui.notifications?.warn(`No saved ${kind === "recap" ? "recap" : "memory note"} is attached to this response.`);
+      return;
+    }
+
+    await this.#openSourceDocument(uuid);
+  }
+
+  async #deleteSavedEntry(kind: "recap" | "memory", entryId: string): Promise<void> {
+    if (this.#isBusy || this.#indexBusy) {
+      ui.notifications?.warn("Wait for the current operation to finish before deleting AI DM notes.");
+      return;
+    }
+
+    const entry = this.#transcript.find((candidate) => candidate.id === entryId);
+    if (entry == null) {
+      ui.notifications?.warn("The saved AI DM entry could not be found in the transcript.");
+      return;
+    }
+
+    const uuid = kind === "recap" ? entry.savedRecapUuid : entry.savedMemoryUuid;
+    if (uuid == null) {
+      ui.notifications?.warn(`No saved ${kind === "recap" ? "recap" : "memory note"} is attached to this response.`);
+      return;
+    }
+
+    const noun = kind === "recap" ? "session recap" : "memory note";
+    if (!window.confirm(`Delete the saved ${noun} for this AI response?`)) {
+      return;
+    }
+
+    this.#indexBusy = true;
+    this.#indexSummaryOverride = `Deleting saved ${noun}...`;
+    this.render(false);
+
+    try {
+      const deleted = await deleteDocumentByUuid(uuid);
+      if (!deleted) {
+        ui.notifications?.warn(`Unable to locate the saved ${noun}.`);
+        return;
+      }
+
+      if (kind === "recap") {
+        entry.savedRecapUuid = undefined;
+      } else {
+        entry.savedMemoryUuid = undefined;
+      }
+
+      ui.notifications?.info(`Deleted ${noun}. Reindexing now...`);
+      logger.info("AI DM saved entry deleted.", {
+        kind,
+        entryId,
+        uuid,
+      });
+    } catch (error) {
+      logger.error("Unable to delete saved AI DM entry.", error);
+      const message =
+        error instanceof Error ? `Unable to delete saved AI DM entry: ${error.message}` : "Unable to delete saved AI DM entry.";
+      this.#indexSummaryOverride = message;
+      ui.notifications?.error(message);
+      return;
+    } finally {
+      this.#indexBusy = false;
+      this.render(false);
+    }
+
+    await this.#runIndexBuild((this.#indexMeta?.chunkCount ?? 0) > 0 ? "refresh" : "build");
+  }
+
   async #submitPrompt(): Promise<void> {
-    if (this.#isBusy) {
+    if (this.#isBusy || this.#indexBusy) {
       return;
     }
 
@@ -414,6 +888,10 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       );
     }
 
+    const retrievedContext = await retrieveIndexedContext(
+      [prompt, ...context.sceneSummary].filter((section) => section.trim().length > 0).join("\n"),
+    );
+
     const userEntry: PanelTranscriptEntry = {
       id: createEntryId(),
       role: "user",
@@ -423,6 +901,8 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       content: prompt,
       pending: false,
       error: false,
+      modelName: undefined,
+      sources: [],
     };
 
     const assistantEntry: PanelTranscriptEntry = {
@@ -435,6 +915,8 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       pending: true,
       error: false,
       meta: `Model: ${clientSettings.chatModel}`,
+      modelName: clientSettings.chatModel,
+      sources: retrievedContext.citations.map(citationToChip),
     };
 
     this.#transcript.push(userEntry, assistantEntry);
@@ -448,12 +930,14 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       timeoutMs: clientSettings.requestTimeoutMs,
     });
 
-    const messages = buildConversationMessages(
-      this.#transcript,
-      this.#selectedMode,
-      worldSettings.tonePreset,
+    const messages = buildConversationMessages({
+      transcript: this.#transcript,
+      mode: this.#selectedMode,
+      tonePreset: worldSettings.tonePreset,
       context,
-    );
+      retrievalReady: retrievedContext.ready,
+      retrievalContext: retrievedContext.promptContext,
+    });
 
     try {
       const response = await client.chatStream(
@@ -482,9 +966,11 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       );
 
       assistantEntry.pending = false;
+      assistantEntry.modelName = response.model;
       assistantEntry.meta = [
         `Model: ${response.model}`,
         response.eval_count != null ? `Tokens: ${String(response.eval_count)}` : undefined,
+        assistantEntry.sources.length > 0 ? `Sources: ${String(assistantEntry.sources.length)}` : undefined,
       ]
         .filter((value): value is string => value != null)
         .join(" • ");
@@ -496,13 +982,15 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       logger.info("AI DM response completed.", {
         mode: this.#selectedMode,
         model: response.model,
+        retrievedChunks: retrievedContext.chunkCount,
       });
     } catch (error) {
       assistantEntry.pending = false;
 
       if (error instanceof OllamaRequestError && error.code === "aborted") {
         assistantEntry.error = false;
-        assistantEntry.meta = assistantEntry.meta != null ? `${assistantEntry.meta} • Cancelled` : "Cancelled";
+        assistantEntry.meta =
+          assistantEntry.meta != null ? `${assistantEntry.meta} • Cancelled` : "Cancelled";
         if (assistantEntry.content.trim().length === 0) {
           assistantEntry.content = "Request cancelled.";
         }
@@ -540,8 +1028,8 @@ export class AIDMPanel extends foundry.appv1.api.Application {
   }
 
   #clearTranscript(): void {
-    if (this.#isBusy) {
-      ui.notifications?.warn("Wait for the current request to finish before clearing the transcript.");
+    if (this.#isBusy || this.#indexBusy) {
+      ui.notifications?.warn("Wait for the current operation to finish before clearing the transcript.");
       return;
     }
 
@@ -577,10 +1065,37 @@ export class AIDMPanel extends foundry.appv1.api.Application {
     return "Open the panel or press Refresh status to validate the local Ollama connection.";
   }
 
+  #retrievalLabel(): string {
+    if (this.#indexBusy) {
+      return "Indexing world data";
+    }
+
+    if ((this.#indexMeta?.chunkCount ?? 0) > 0) {
+      return "World retrieval ready";
+    }
+
+    return "World retrieval not ready";
+  }
+
+  #retrievalSummary(): string {
+    if (this.#indexBusy && this.#indexSummaryOverride != null) {
+      return this.#indexSummaryOverride;
+    }
+
+    if (this.#indexSummaryOverride != null && !this.#indexBusy) {
+      return this.#indexSummaryOverride;
+    }
+
+    if (this.#indexMeta == null || this.#indexMeta.chunkCount === 0) {
+      return "Build the index to ground Lore / World Q&A in journals, scenes, actors, items, and roll tables.";
+    }
+
+    const builtAtLabel = formatIndexedTimestamp(this.#indexMeta.builtAt);
+    return `${String(this.#indexMeta.sourceCount)} sources • ${String(this.#indexMeta.chunkCount)} chunks${builtAtLabel != null ? ` • ${builtAtLabel}` : ""}`;
+  }
+
   #updateAssistantEntryContent(entry: PanelTranscriptEntry): void {
-    const contentNode = this.element.find(
-      `[data-entry-id="${entry.id}"] .aidm-panel-transcript-content`,
-    );
+    const contentNode = this.element.find(`[data-entry-id="${entry.id}"] .aidm-panel-transcript-content`);
     if (contentNode.length === 0) {
       return;
     }

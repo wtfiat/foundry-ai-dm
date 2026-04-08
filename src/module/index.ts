@@ -3,6 +3,7 @@ import { logger } from "./logger.ts";
 import { OllamaClient } from "./ollama/client.ts";
 import { runOllamaDiagnostics } from "./ollama/diagnostics.ts";
 import { openAIDMPanel, toggleAIDMPanel } from "./panel.ts";
+import { buildWorldIndex, getRetrievalIndexMeta } from "./retrieval/service.ts";
 import { registerSettings, AIDMSettings } from "./settings.ts";
 
 type SceneControlToolRecord = Record<string, Record<string, unknown>> & {
@@ -39,8 +40,14 @@ Hooks.once("init", () => {
         expectedChatModel: AIDMSettings.getClientSettings().chatModel,
         expectedEmbeddingModel: AIDMSettings.getClientSettings().embeddingModel,
       }),
-    openPanel: () => openAIDMPanel(),
-    togglePanel: () => toggleAIDMPanel(),
+    openPanel: () => {
+      openAIDMPanel();
+    },
+    togglePanel: () => {
+      toggleAIDMPanel();
+    },
+    getIndexMeta: async () => getRetrievalIndexMeta(),
+    buildIndex: async (mode: "build" | "refresh" = "build") => buildWorldIndex({ mode }),
   };
 });
 
@@ -55,7 +62,13 @@ Hooks.once("ready", () => {
   logger.debug("Current AI DM settings snapshot.", AIDMSettings.getAllSettings());
 });
 
-Hooks.on("getSceneControlButtons", (controls: SceneControlsRecord) => {
+// eslint-disable-next-line @typescript-eslint/no-deprecated
+const registerSceneControlButtonsHook = Hooks.on.bind(Hooks) as unknown as (
+  hook: string,
+  fn: (controls: SceneControlsRecord) => void,
+) => number;
+
+registerSceneControlButtonsHook("getSceneControlButtons", (controls: SceneControlsRecord) => {
   if (!game.user?.isGM) {
     return;
   }

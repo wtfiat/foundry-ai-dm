@@ -265,6 +265,13 @@
   line-height: 1.45;
 }
 
+
+.aidm-panel-transcript-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
 .aidm-panel-transcript-meta,
 .aidm-panel-tone,
 .aidm-panel-composer-hint {
@@ -304,4 +311,68 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.aidm-chip-success {
+  border-color: var(--color-level-success);
+}
+
+.aidm-panel-index-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.aidm-panel-index-meta {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.aidm-panel-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.aidm-panel-source-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-light-primary);
+  background: rgb(255 255 255 / 4%);
+  color: inherit;
+  font: inherit;
+  max-width: 16rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.aidm-panel-source-chip:hover,
+.aidm-panel-source-chip:focus-visible {
+  border-color: var(--color-text-emphatic);
+  background: rgb(255 255 255 / 8%);
+}
+
+.aidm-panel-source-chip-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.aidm-panel-source-chip-detail {
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.aidm-panel-source-chip-excerpt {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  opacity: 0.92;
+  white-space: normal;
+}
+
+.aidm-panel-button-row {
+  flex-wrap: wrap;
 }
