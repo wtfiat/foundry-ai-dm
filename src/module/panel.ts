@@ -1,3 +1,4 @@
+import { openDocumentByUuid, deleteDocumentByUuid } from "./document-links.ts";
 import { MODULE_ID, MODULE_TITLE } from "./constants.ts";
 import { logger } from "./logger.ts";
 import { saveAIDMJournalEntry } from "./memory.ts";
@@ -482,6 +483,71 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       }
     });
 
+    html.find('[data-action="open-source"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const sourceUuid = target.dataset["sourceUuid"];
+      if (sourceUuid != null) {
+        void this.#openSourceDocument(sourceUuid);
+      }
+    });
+
+    html.find('[data-action="open-saved-recap"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#openSavedEntry("recap", entryId);
+      }
+    });
+
+    html.find('[data-action="delete-saved-recap"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#deleteSavedEntry("recap", entryId);
+      }
+    });
+
+    html.find('[data-action="open-saved-memory"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#openSavedEntry("memory", entryId);
+      }
+    });
+
+    html.find('[data-action="delete-saved-memory"]').on("click", (event) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const entryId = target.dataset["entryId"];
+      if (entryId != null) {
+        void this.#deleteSavedEntry("memory", entryId);
+      }
+    });
+
     html.find('[data-action="cancel-request"]').on("click", (event) => {
       event.preventDefault();
       this.#cancelRequest();
@@ -701,6 +767,95 @@ export class AIDMPanel extends foundry.appv1.api.Application {
       logger.error("Unable to save AI DM transcript entry.", error);
       const message =
         error instanceof Error ? `Unable to save AI DM journal entry: ${error.message}` : "Unable to save AI DM journal entry.";
+      this.#indexSummaryOverride = message;
+      ui.notifications?.error(message);
+      return;
+    } finally {
+      this.#indexBusy = false;
+      this.render(false);
+    }
+
+    await this.#runIndexBuild((this.#indexMeta?.chunkCount ?? 0) > 0 ? "refresh" : "build");
+  }
+
+  async #openSourceDocument(uuid: string): Promise<void> {
+    try {
+      const opened = await openDocumentByUuid(uuid);
+      if (!opened) {
+        ui.notifications?.warn("Unable to open the selected source document.");
+      }
+    } catch (error) {
+      logger.error("Unable to open source document.", error);
+      ui.notifications?.error("Unable to open the selected source document.");
+    }
+  }
+
+  async #openSavedEntry(kind: "recap" | "memory", entryId: string): Promise<void> {
+    const entry = this.#transcript.find((candidate) => candidate.id === entryId);
+    if (entry == null) {
+      ui.notifications?.warn("The saved AI DM entry could not be found in the transcript.");
+      return;
+    }
+
+    const uuid = kind === "recap" ? entry.savedRecapUuid : entry.savedMemoryUuid;
+    if (uuid == null) {
+      ui.notifications?.warn(`No saved ${kind === "recap" ? "recap" : "memory note"} is attached to this response.`);
+      return;
+    }
+
+    await this.#openSourceDocument(uuid);
+  }
+
+  async #deleteSavedEntry(kind: "recap" | "memory", entryId: string): Promise<void> {
+    if (this.#isBusy || this.#indexBusy) {
+      ui.notifications?.warn("Wait for the current operation to finish before deleting AI DM notes.");
+      return;
+    }
+
+    const entry = this.#transcript.find((candidate) => candidate.id === entryId);
+    if (entry == null) {
+      ui.notifications?.warn("The saved AI DM entry could not be found in the transcript.");
+      return;
+    }
+
+    const uuid = kind === "recap" ? entry.savedRecapUuid : entry.savedMemoryUuid;
+    if (uuid == null) {
+      ui.notifications?.warn(`No saved ${kind === "recap" ? "recap" : "memory note"} is attached to this response.`);
+      return;
+    }
+
+    const noun = kind === "recap" ? "session recap" : "memory note";
+    if (!window.confirm(`Delete the saved ${noun} for this AI response?`)) {
+      return;
+    }
+
+    this.#indexBusy = true;
+    this.#indexSummaryOverride = `Deleting saved ${noun}...`;
+    this.render(false);
+
+    try {
+      const deleted = await deleteDocumentByUuid(uuid);
+      if (!deleted) {
+        ui.notifications?.warn(`Unable to locate the saved ${noun}.`);
+        return;
+      }
+
+      if (kind === "recap") {
+        entry.savedRecapUuid = undefined;
+      } else {
+        entry.savedMemoryUuid = undefined;
+      }
+
+      ui.notifications?.info(`Deleted ${noun}. Reindexing now...`);
+      logger.info("AI DM saved entry deleted.", {
+        kind,
+        entryId,
+        uuid,
+      });
+    } catch (error) {
+      logger.error("Unable to delete saved AI DM entry.", error);
+      const message =
+        error instanceof Error ? `Unable to delete saved AI DM entry: ${error.message}` : "Unable to delete saved AI DM entry.";
       this.#indexSummaryOverride = message;
       ui.notifications?.error(message);
       return;

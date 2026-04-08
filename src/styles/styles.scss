@@ -343,7 +343,17 @@
   border-radius: 8px;
   border: 1px solid var(--color-border-light-primary);
   background: rgb(255 255 255 / 4%);
-  max-width: 14rem;
+  color: inherit;
+  font: inherit;
+  max-width: 16rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.aidm-panel-source-chip:hover,
+.aidm-panel-source-chip:focus-visible {
+  border-color: var(--color-text-emphatic);
+  background: rgb(255 255 255 / 8%);
 }
 
 .aidm-panel-source-chip-title {
@@ -354,6 +364,13 @@
 .aidm-panel-source-chip-detail {
   font-size: 0.72rem;
   opacity: 0.8;
+}
+
+.aidm-panel-source-chip-excerpt {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  opacity: 0.92;
+  white-space: normal;
 }
 
 .aidm-panel-button-row {

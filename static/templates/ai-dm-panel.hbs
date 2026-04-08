@@ -108,18 +108,26 @@
             {{#if entry.sources.length}}
               <div class="aidm-panel-source-list">
                 {{#each entry.sources as |source|}}
-                  <div class="aidm-panel-source-chip" title="{{source.excerpt}}">
+                  <button type="button" class="aidm-panel-source-chip" data-action="open-source" data-source-uuid="{{source.uuid}}" title="Open source document">
                     <div class="aidm-panel-source-chip-title">{{source.label}}</div>
                     <div class="aidm-panel-source-chip-detail">{{source.detail}} • {{source.scoreLabel}}</div>
-                  </div>
+                    <div class="aidm-panel-source-chip-excerpt">{{source.excerpt}}</div>
+                  </button>
                 {{/each}}
               </div>
             {{/if}}
 
             {{#if entry.hasSaveControls}}
               <div class="aidm-panel-transcript-actions">
-                {{#if entry.savedRecapLabel}}
-                  <span class="aidm-chip aidm-chip-success">{{entry.savedRecapLabel}}</span>
+                {{#if entry.savedRecapUuid}}
+                  <button type="button" class="aidm-button aidm-button-secondary" data-action="open-saved-recap" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
+                    <i class="fa-solid fa-book-open"></i>
+                    Open Recap
+                  </button>
+                  <button type="button" class="aidm-button aidm-button-secondary" data-action="delete-saved-recap" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
+                    <i class="fa-solid fa-trash"></i>
+                    Delete Recap
+                  </button>
                 {{else}}
                   {{#if entry.canSaveRecap}}
                   <button type="button" class="aidm-button aidm-button-secondary" data-action="save-recap" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
@@ -129,8 +137,15 @@
                   {{/if}}
                 {{/if}}
 
-                {{#if entry.savedMemoryLabel}}
-                  <span class="aidm-chip aidm-chip-success">{{entry.savedMemoryLabel}}</span>
+                {{#if entry.savedMemoryUuid}}
+                  <button type="button" class="aidm-button aidm-button-secondary" data-action="open-saved-memory" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
+                    <i class="fa-solid fa-brain"></i>
+                    Open Memory
+                  </button>
+                  <button type="button" class="aidm-button aidm-button-secondary" data-action="delete-saved-memory" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
+                    <i class="fa-solid fa-trash"></i>
+                    Delete Memory
+                  </button>
                 {{else}}
                   {{#if entry.canSaveMemory}}
                   <button type="button" class="aidm-button aidm-button-secondary" data-action="save-memory" data-entry-id="{{entry.id}}" {{#if @root.isBusy}}disabled{{/if}} {{#if @root.isIndexBusy}}disabled{{/if}}>
